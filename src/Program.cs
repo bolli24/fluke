@@ -1,4 +1,6 @@
-﻿namespace fluke;
+﻿using Pidgin;
+
+namespace fluke;
 
 internal static class Program {
 	private static void Main(string[] args) {
@@ -23,13 +25,30 @@ internal static class Program {
 		Console.WriteLine(text);
 		Console.WriteLine();
 
-		var tokens = Lexer.Lex(text);
+		var start = DateTime.Now;
+		List<Token> tokens;
+		try {
+			tokens = Lexer.Lex(text);
+		} catch (ParseException<char> e) {
+			Console.Error.WriteLine($"Lex error: {e.Message}");
+			return;
+		}
+		Console.WriteLine($"Lexed input in {(DateTime.Now - start).Milliseconds} ms");
 		foreach (var token in tokens) {
 			Console.WriteLine(token);
 		}
+
 		Console.WriteLine();
-		
-		var ast = Parser.Parse(text);
+
+		start = DateTime.Now;
+		FlukeProgram ast;
+		try {
+			ast = Parser.Parse(tokens);
+		} catch (ParseException<Token> e) {
+			Console.Error.WriteLine($"Parse error: {e.Message}");
+			return;
+		}
+		Console.WriteLine($"Parsed input in {(DateTime.Now - start).Milliseconds} ms");
 		foreach (var statement in ast.Statements) {
 			Console.WriteLine(statement);
 		}

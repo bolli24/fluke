@@ -12,15 +12,7 @@
     </PropertyGroup>
 
     <ItemGroup>
-        <PackageReference Include="Antlr4.Runtime.Standard" Version="4.13.1" />
-        <PackageReference Include="Antlr4BuildTasks" Version="12.14.0" PrivateAssets="all" />
-    </ItemGroup>
-
-    <ItemGroup>
-        <Antlr4 Include="src\FlukeLexer.g4" />
-        <Antlr4 Include="src\FlukeParser.g4">
-            <Visitor>true</Visitor>
-        </Antlr4>
+        <PackageReference Include="Pidgin" Version="3.3.0" />
     </ItemGroup>
 
 </Project>
