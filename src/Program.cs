@@ -21,8 +21,7 @@ internal static class Program {
 			Console.WriteLine(e.Message);
 			return;
 		}
-
-		Console.WriteLine(text);
+		
 		Console.WriteLine();
 
 		var start = DateTime.Now;
@@ -39,7 +38,6 @@ internal static class Program {
 		}
 
 		Console.WriteLine();
-
 		
 		Ast ast;
 		try {

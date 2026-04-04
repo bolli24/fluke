@@ -1,3 +1,5 @@
+// Token + Lexer
+
 using System.Diagnostics;
 using Pidgin;
 using static Pidgin.Parser;
@@ -10,16 +12,40 @@ public abstract record Token {
 
 	public record Semicolon : Token;
 
+	public record LParen : Token;
+
+	public record RParen : Token;
+
+	public record Plus : Token;
+
+	public record Minus : Token;
+
+	public record Star : Token;
+
+	public record Slash : Token;
+
+	public record Bang : Token;
+
 	public record Identifier(string name) : Token;
 
 	public record String(string value) : Token;
+
+	public record Int(int value) : Token;
 
 	public sealed override string ToString() {
 		return this switch {
 			Colon => "Colon",
 			Semicolon => "Semicolon",
+			LParen => "LParen",
+			RParen => "RParen",
+			Plus => "Plus",
+			Minus => "Minus",
+			Star => "Star",
+			Slash => "Slash",
+			Bang => "Bang",
 			Identifier(var name) => $"Identifier({name})",
 			String(var value) => $"String({value})",
+			Int(var value) => $"Int({value})",
 			_ => throw new UnreachableException()
 		};
 	}
@@ -27,18 +53,41 @@ public abstract record Token {
 
 public static class Lexer {
 	private static readonly Parser<char, Token> Colon =
-		from _ in Char(':')
-		select (Token)new Token.Colon();
-	
+		Char(':').ThenReturn((Token)new Token.Colon());
+
 	private static readonly Parser<char, Token> Semicolon =
-		from _ in Char(';')
-		select (Token)new Token.Semicolon();
+		Char(';').ThenReturn((Token)new Token.Semicolon());
+
+	private static readonly Parser<char, Token> LParen =
+		Char('(').ThenReturn((Token)new Token.LParen());
+
+	private static readonly Parser<char, Token> RParen =
+		Char(')').ThenReturn((Token)new Token.RParen());
+
+	private static readonly Parser<char, Token> Plus =
+		Char('+').ThenReturn((Token)new Token.Plus());
+
+	private static readonly Parser<char, Token> Minus =
+		Char('-').ThenReturn((Token)new Token.Minus());
+
+	private static readonly Parser<char, Token> Star =
+		Char('*').ThenReturn((Token)new Token.Star());
+
+	private static readonly Parser<char, Token> Slash =
+		Char('/').ThenReturn((Token)new Token.Slash());
+
+	private static readonly Parser<char, Token> Bang =
+		Char('/').ThenReturn((Token)new Token.Bang());
 
 	private static readonly Parser<char, Token> String =
 		from _ in Char('"')
 		from value in Try(Any.Where(c => c != '"' && c != '\r' && c != '\n')).ManyString()
 		from __ in Char('"').Labelled("closing '\"' (unterminated string)")
 		select (Token)new Token.String(value);
+
+	private static readonly Parser<char, Token> IntLiteral =
+		from digits in Digit.AtLeastOnceString()
+		select (Token)new Token.Int(int.Parse(digits));
 
 	private static readonly Parser<char, Token> Identifier =
 		from first in Letter.Or(Char('_'))
@@ -47,7 +96,11 @@ public static class Lexer {
 
 	private static readonly Parser<char, List<Token>> Tokens =
 		from _leading in Whitespace.SkipMany()
-		from tokens in OneOf(Colon, Semicolon, Identifier, String).Before(Whitespace.SkipMany()).Many()
+		from tokens in OneOf(
+			Colon, Semicolon, LParen, RParen,
+			Plus, Minus, Star, Slash, Bang,
+			String, Try(IntLiteral), Identifier
+		).Before(Whitespace.SkipMany()).Many()
 		from _end in End
 		select tokens.ToList();
 
