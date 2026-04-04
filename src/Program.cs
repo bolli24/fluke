@@ -40,8 +40,8 @@ internal static class Program {
 
 		Console.WriteLine();
 
-		start = DateTime.Now;
-		FlukeProgram ast;
+		
+		Ast ast;
 		try {
 			ast = Parser.Parse(tokens);
 		} catch (ParseException<Token> e) {
@@ -52,5 +52,14 @@ internal static class Program {
 		foreach (var statement in ast.Statements) {
 			Console.WriteLine(statement);
 		}
+		Console.WriteLine();
+		
+		start = DateTime.Now;
+		var generator = new Generator();
+		var program = generator.Generate(ast);
+		Console.WriteLine($"Built executable in {(DateTime.Now - start).Milliseconds} ms");
+		Console.WriteLine();
+		
+		program.Run();
 	}
 }
