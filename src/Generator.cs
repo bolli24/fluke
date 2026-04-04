@@ -14,7 +14,8 @@ public class FlukeProgram(Type programType) {
 
 public enum ExpressionType {
 	Int,
-	String
+	String,
+	Unit,
 }
 
 static class ExpressionTypeExt {
@@ -22,13 +23,27 @@ static class ExpressionTypeExt {
 		return type switch {
 			ExpressionType.Int => typeof(int),
 			ExpressionType.String => typeof(string),
+			ExpressionType.Unit => typeof(void),
 			_ => throw new UnreachableException(),
 		};
 	}
 }
 
+internal class Scope {
+	private readonly Dictionary<string, (ExpressionType type, LocalBuilder local)> variables = new();
+
+	public (ExpressionType type, LocalBuilder local)? GetVar(string name) {
+		return variables.TryGetValue(name, out var value) ? value : null;
+	}
+
+	public void SetVar(string name, (ExpressionType type, LocalBuilder local) var) {
+		variables[name] = var;
+	}
+}
+
 public class Generator {
 	private MethodBuilder currentMethod;
+	private Scope currentScope = new();
 
 	public FlukeProgram Generate(Ast ast) {
 		var asmName = new AssemblyName("Fluke");
@@ -60,6 +75,14 @@ public class Generator {
 			case Statement.IntrinsicCall("print", var arg): {
 				var type = BuildExpression(arg);
 				il.Emit(OpCodes.Call, typeof(Console).GetMethod("WriteLine", new[] { type.AsType() }));
+				break;
+			}
+			case Statement.VariableBinding(var name, var expression): {
+				var type = BuildExpression(expression);
+				var local = il.DeclareLocal(typeof(int));
+				il.Emit(OpCodes.Stloc, local);
+
+				currentScope.SetVar(name, (type, local));
 				break;
 			}
 			default:
@@ -94,8 +117,19 @@ public class Generator {
 					case Op.Div: il.Emit(OpCodes.Div); break;
 					default: throw new Exception($"Operator not supported: {op}");
 				}
-				
+
 				return left_type;
+			}
+			case Expression.Identifier(var name): {
+				var variable = currentScope.GetVar(name);
+				if (variable is null) {
+					throw new Exception($"Use of undeclared identifier '{name}'");
+				}
+
+				var (type, local) = variable.Value;
+				il.Emit(OpCodes.Ldloc, local);
+
+				return type;
 			}
 			default:
 				throw new Exception($"Expression not supported: {expression}");

@@ -26,6 +26,8 @@ public abstract record Token {
 
 	public record Bang : Token;
 
+	public record Equal : Token;
+
 	public record Identifier(string name) : Token;
 
 	public record String(string value) : Token;
@@ -43,12 +45,16 @@ public abstract record Token {
 			Star => "Star",
 			Slash => "Slash",
 			Bang => "Bang",
+			Equal => "Equal",
 			Identifier(var name) => $"Identifier({name})",
 			String(var value) => $"String({value})",
 			Int(var value) => $"Int({value})",
+			Keyword(var name) => $"Keyword({name})",
 			_ => throw new UnreachableException()
 		};
 	}
+
+	public record Keyword(string name) : Token;
 }
 
 public static class Lexer {
@@ -77,7 +83,10 @@ public static class Lexer {
 		Char('/').ThenReturn((Token)new Token.Slash());
 
 	private static readonly Parser<char, Token> Bang =
-		Char('/').ThenReturn((Token)new Token.Bang());
+		Char('!').ThenReturn((Token)new Token.Bang());
+	
+	private static readonly Parser<char, Token> Equal =
+		Char('=').ThenReturn((Token)new Token.Equal());
 
 	private static readonly Parser<char, Token> String =
 		from _ in Char('"')
@@ -89,6 +98,13 @@ public static class Lexer {
 		from digits in Digit.AtLeastOnceString()
 		select (Token)new Token.Int(int.Parse(digits));
 
+	private static readonly Parser<char, Token> Keyword =
+		from name in Letter.ManyString().Where(name => name switch {
+			"let" => true,
+			_ => false
+		})
+		select (Token)new Token.Keyword(name);
+
 	private static readonly Parser<char, Token> Identifier =
 		from first in Letter.Or(Char('_'))
 		from rest in LetterOrDigit.Or(Char('_')).ManyString()
@@ -98,8 +114,8 @@ public static class Lexer {
 		from _leading in Whitespace.SkipMany()
 		from tokens in OneOf(
 			Colon, Semicolon, LParen, RParen,
-			Plus, Minus, Star, Slash, Bang,
-			String, Try(IntLiteral), Identifier
+			Plus, Minus, Star, Slash, Bang, Equal,
+			String, Try(IntLiteral), Try(Keyword), Identifier
 		).Before(Whitespace.SkipMany()).Many()
 		from _end in End
 		select tokens.ToList();

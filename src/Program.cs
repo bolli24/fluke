@@ -38,7 +38,8 @@ internal static class Program {
 		}
 
 		Console.WriteLine();
-		
+
+		start = DateTime.Now;
 		Ast ast;
 		try {
 			ast = Parser.Parse(tokens);
