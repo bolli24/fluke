@@ -17,7 +17,7 @@ public abstract record Statement {
 	public sealed override string ToString() {
 		return this switch {
 			IntrinsicCall(var name, null) => $"Intrinsic({name})",
-			IntrinsicCall(var name, var arg) => $"Intrinsic({name}, {arg})",
+			IntrinsicCall(var name, var args) => $"Intrinsic({name}, {string.Join(", ", args)})",
 			ExpressionStatement(var expr) => $"Expr({expr})",
 			VariableBinding(var name, var expr) => $"Binding({name}, {expr})",
 			_ => throw new UnreachableException()
