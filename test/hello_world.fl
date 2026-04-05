@@ -1,13 +1,13 @@
-﻿:print "Hello, world";
-:print;
-:print "Wow";
+﻿:print("Hello, world");
+:print();
+:print ("Wow");
 
 let a = 69;
 let b = 42;
 
-:print a + b;
-:print a + b == 111;
+:print(a + b);
+:assert(a + b == 111);
 
 let x = 123;
 
-:print x;
+:print(x);

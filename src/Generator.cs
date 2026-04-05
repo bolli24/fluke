@@ -70,14 +70,35 @@ public class Generator {
 	private void BuildStatement(Statement statement) {
 		var il = currentMethod.GetILGenerator();
 		switch (statement) {
-			case Statement.IntrinsicCall("print", null): {
+			case Statement.IntrinsicCall("print", []): {
 				il.Emit(OpCodes.Call, typeof(Console).GetMethod("WriteLine", Type.EmptyTypes));
 				break;
 			}
-			case Statement.IntrinsicCall("print", var arg): {
+			case Statement.IntrinsicCall("print", [var arg]): {
 				var type = BuildExpression(arg);
 				il.Emit(OpCodes.Call, typeof(Console).GetMethod("WriteLine", new[] { type.AsType() }));
 				break;
+			}
+			case Statement.IntrinsicCall("print", var args): {
+				throw new Exception($"Too many arguments: {args.Length}. Intrinsic 'print' requires 0 or 1 arguments.");
+			}
+			case Statement.IntrinsicCall("assert", [var arg]): {
+				var type = BuildExpression(arg);
+				if (type != ExpressionType.Bool)
+					throw new Exception($"Invalid type '{type}'. Expected: 'Bool'");
+
+				var okLabel = il.DefineLabel();
+				il.Emit(OpCodes.Brtrue, okLabel);
+				il.Emit(OpCodes.Ldstr, "Assertion failed");
+				il.Emit(OpCodes.Newobj, typeof(Exception).GetConstructor([typeof(string)])!);
+				il.Emit(OpCodes.Throw);
+				il.MarkLabel(okLabel);
+
+				break;
+			}
+			case Statement.IntrinsicCall("assert", var args): {
+				throw new Exception(
+					$"Wrong number of arguments: {args.Length}. Intrinsic 'assert' requires 1 argument.");
 			}
 			case Statement.VariableBinding(var name, var expression): {
 				var type = BuildExpression(expression);
@@ -120,7 +141,8 @@ public class Generator {
 					if (left_type != right_type)
 						throw new Exception(
 							$"Type mismatch. Can't call operator '{op}' on operands of different types '{left_type}' and '{right_type}'");
-				} else if (left_type != expectedType || right_type != expectedType) {
+				}
+				else if (left_type != expectedType || right_type != expectedType) {
 					throw new Exception(
 						$"Type mismatch. Can't call operator '{op}' on operands of different types '{left_type}' and '{right_type}'");
 				}

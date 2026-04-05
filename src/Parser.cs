@@ -8,7 +8,7 @@ namespace fluke;
 public record Ast(List<Statement> Statements);
 
 public abstract record Statement {
-	public record IntrinsicCall(string name, Expression? expr) : Statement;
+	public record IntrinsicCall(string name, Expression[] args) : Statement;
 
 	public record ExpressionStatement(Expression expr) : Statement;
 
@@ -71,7 +71,7 @@ public static class Parser {
 	private static readonly Parser<Token, string> String =
 		from token in Token(t => t is Token.String)
 		select ((Token.String)token).value;
-	
+
 	private static readonly Parser<Token, string> IdentifierName =
 		from t in Token(t => t is Token.Identifier)
 		select ((Token.Identifier)t).name;
@@ -157,10 +157,18 @@ public static class Parser {
 	private static readonly Parser<Token, Expression> Expression = LogicalOr;
 
 	private static readonly Parser<Token, Statement> IntrinsicCall =
-		from _ in Token(new Token.Colon())
+		from _colon in Token(new Token.Colon())
 		from name in IdentifierName
-		from arg in Expression.Optional()
-		select (Statement)new Statement.IntrinsicCall(name, arg.HasValue ? arg.Value : null);
+		from _lparen in Token(new Token.LParen())
+		from args in Try(
+			from arg in Expression
+			from _comma in Token(new Token.Comma())
+			select arg
+		).Many()
+		from extra in Expression.Optional()
+		from _rparen in Token(new Token.RParen())
+		select (Statement)new Statement.IntrinsicCall(name,
+			extra.HasValue ? [..args, extra.Value] : args.ToArray());
 
 	private static readonly Parser<Token, Statement> ExpressionStatement =
 		from expr in Expression

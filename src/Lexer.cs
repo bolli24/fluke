@@ -12,6 +12,8 @@ public abstract record Token {
 
 	public record Semicolon : Token;
 
+	public record Comma : Token;
+
 	public record LParen : Token;
 
 	public record RParen : Token;
@@ -48,6 +50,7 @@ public abstract record Token {
 		return this switch {
 			Colon => "Colon",
 			Semicolon => "Semicolon",
+			Comma => "Comma",
 			LParen => "LParen",
 			RParen => "RParen",
 			Plus => "Plus",
@@ -78,6 +81,9 @@ public static class Lexer {
 
 	private static readonly Parser<char, Token> Semicolon =
 		Char(';').ThenReturn((Token)new Token.Semicolon());
+	
+	private static readonly Parser<char, Token> Comma =
+		Char(',').ThenReturn((Token)new Token.Comma());
 
 	private static readonly Parser<char, Token> LParen =
 		Char('(').ThenReturn((Token)new Token.LParen());
@@ -99,10 +105,10 @@ public static class Lexer {
 
 	private static readonly Parser<char, Token> Bang =
 		Char('!').ThenReturn((Token)new Token.Bang());
-	
+
 	private static readonly Parser<char, Token> Equal =
 		Char('=').ThenReturn((Token)new Token.Equal());
-	
+
 	private static readonly Parser<char, Token> EqualEqual =
 		String("==").ThenReturn((Token)new Token.EqualEqual());
 
@@ -144,7 +150,7 @@ public static class Lexer {
 	private static readonly Parser<char, List<Token>> Tokens =
 		from _leading in Whitespace.SkipMany()
 		from tokens in OneOf(
-			Colon, Semicolon, LParen, RParen,
+			Colon, Semicolon, Comma, LParen, RParen,
 			Plus, Minus, Star, Slash, Try(BangEqual), Bang, Try(EqualEqual), Equal,
 			Try(PipePipe), Try(AmpAmp),
 			String, Try(IntLiteral), Try(Keyword), Try(BoolLiteral), Identifier
