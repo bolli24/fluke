@@ -25,11 +25,18 @@ public abstract record Statement {
 	}
 }
 
-public enum Op {
+public enum BinOp {
 	Add,
 	Sub,
 	Mul,
 	Div,
+	And,
+	Or,
+	Eq,
+	Neq
+}
+
+public enum UnOp {
 	Neg,
 	Not
 }
@@ -39,16 +46,19 @@ public abstract record Expression {
 
 	public record IntLiteral(int value) : Expression;
 
+	public record BoolLiteral(bool value) : Expression;
+
 	public record Identifier(string name) : Expression;
 
-	public record BinaryOp(Expression left, Op op, Expression right) : Expression;
+	public record BinaryOp(Expression left, BinOp op, Expression right) : Expression;
 
-	public record UnaryOp(Op op, Expression operand) : Expression;
+	public record UnaryOp(UnOp op, Expression operand) : Expression;
 
 	public sealed override string ToString() {
 		return this switch {
-			IntLiteral(var v) => v.ToString(),
 			StringLiteral(var v) => $"\"{v}\"",
+			IntLiteral(var v) => v.ToString(),
+			BoolLiteral(var v) => v.ToString(),
 			Identifier(var n) => n,
 			BinaryOp(var l, var op, var r) => $"({l} {op} {r})",
 			UnaryOp(var op, var e) => $"({op}{e})",
@@ -61,7 +71,7 @@ public static class Parser {
 	private static readonly Parser<Token, string> String =
 		from token in Token(t => t is Token.String)
 		select ((Token.String)token).value;
-
+	
 	private static readonly Parser<Token, string> IdentifierName =
 		from t in Token(t => t is Token.Identifier)
 		select ((Token.Identifier)t).name;
@@ -70,12 +80,14 @@ public static class Parser {
 	private static readonly Parser<Token, Expression> Atom =
 		(from t in Token(t => t is Token.Int)
 			select (Expression)new Expression.IntLiteral(((Token.Int)t).value))
+		.Or(from t in Token(t => t is Token.Bool)
+			select (Expression)new Expression.BoolLiteral(((Token.Bool)t).value))
 		.Or(from s in String
 			select (Expression)new Expression.StringLiteral(s))
 		.Or(from n in IdentifierName
 			select (Expression)new Expression.Identifier(n))
 		.Or(from _l in Token(new Token.LParen())
-			from e in Pidgin.Parser.Rec(() => Additive)
+			from e in Rec(() => LogicalOr)
 			from _r in Token(new Token.RParen())
 			select e);
 
@@ -83,18 +95,18 @@ public static class Parser {
 	private static readonly Parser<Token, Expression> Unary =
 		(from _ in Token(new Token.Minus())
 			from e in Rec(() => Unary)
-			select (Expression)new Expression.UnaryOp(Op.Neg, e))
+			select (Expression)new Expression.UnaryOp(UnOp.Neg, e))
 		.Or(from _ in Token(new Token.Bang())
 			from e in Rec(() => Unary)
-			select (Expression)new Expression.UnaryOp(Op.Not, e))
+			select (Expression)new Expression.UnaryOp(UnOp.Not, e))
 		.Or(Atom);
 
 	// Multiplicative: *, /
 	private static readonly Parser<Token, Expression> Multiplicative =
 		from left in Unary
 		from ops in (
-			from op in Token(new Token.Star()).ThenReturn(Op.Mul)
-				.Or(Token(new Token.Slash()).ThenReturn(Op.Div))
+			from op in Token(new Token.Star()).ThenReturn(BinOp.Mul)
+				.Or(Token(new Token.Slash()).ThenReturn(BinOp.Div))
 			from right in Unary
 			select (op, right)
 		).Many()
@@ -104,14 +116,45 @@ public static class Parser {
 	private static readonly Parser<Token, Expression> Additive =
 		from left in Multiplicative
 		from ops in (
-			from op in Token(new Token.Plus()).ThenReturn(Op.Add)
-				.Or(Token(new Token.Minus()).ThenReturn(Op.Sub))
+			from op in Token(new Token.Plus()).ThenReturn(BinOp.Add)
+				.Or(Token(new Token.Minus()).ThenReturn(BinOp.Sub))
 			from right in Multiplicative
 			select (op, right)
 		).Many()
 		select ops.Aggregate(left, (l, pair) => new Expression.BinaryOp(l, pair.op, pair.right));
 
-	private static readonly Parser<Token, Expression> Expression = Additive;
+	// Equality: ==, !=
+	private static readonly Parser<Token, Expression> Equality =
+		from left in Additive
+		from ops in (
+			from op in Token(new Token.EqualEqual()).ThenReturn(BinOp.Eq)
+				.Or(Token(new Token.BangEqual()).ThenReturn(BinOp.Neq))
+			from right in Additive
+			select (op, right)
+		).Many()
+		select ops.Aggregate(left, (l, pair) => new Expression.BinaryOp(l, pair.op, pair.right));
+
+	// LogicalAnd: &&
+	private static readonly Parser<Token, Expression> LogicalAnd =
+		from left in Equality
+		from ops in (
+			from op in Token(new Token.AmpAmp()).ThenReturn(BinOp.And)
+			from right in Equality
+			select (op, right)
+		).Many()
+		select ops.Aggregate(left, (l, pair) => new Expression.BinaryOp(l, pair.op, pair.right));
+
+	// LogicalOr: ||
+	private static readonly Parser<Token, Expression> LogicalOr =
+		from left in LogicalAnd
+		from ops in (
+			from op in Token(new Token.PipePipe()).ThenReturn(BinOp.Or)
+			from right in LogicalAnd
+			select (op, right)
+		).Many()
+		select ops.Aggregate(left, (l, pair) => new Expression.BinaryOp(l, pair.op, pair.right));
+
+	private static readonly Parser<Token, Expression> Expression = LogicalOr;
 
 	private static readonly Parser<Token, Statement> IntrinsicCall =
 		from _ in Token(new Token.Colon())

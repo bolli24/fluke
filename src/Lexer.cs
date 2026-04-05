@@ -28,11 +28,21 @@ public abstract record Token {
 
 	public record Equal : Token;
 
+	public record EqualEqual : Token;
+
+	public record BangEqual : Token;
+
+	public record PipePipe : Token;
+
+	public record AmpAmp : Token;
+
 	public record Identifier(string name) : Token;
 
 	public record String(string value) : Token;
 
 	public record Int(int value) : Token;
+
+	public record Bool(bool value) : Token;
 
 	public sealed override string ToString() {
 		return this switch {
@@ -46,9 +56,14 @@ public abstract record Token {
 			Slash => "Slash",
 			Bang => "Bang",
 			Equal => "Equal",
+			EqualEqual => "EqualEqual",
+			BangEqual => "BangEqual",
+			PipePipe => "PipePipe",
+			AmpAmp => "AmpAmp",
 			Identifier(var name) => $"Identifier({name})",
 			String(var value) => $"String({value})",
 			Int(var value) => $"Int({value})",
+			Bool(var value) => $"Bool({value})",
 			Keyword(var name) => $"Keyword({name})",
 			_ => throw new UnreachableException()
 		};
@@ -87,6 +102,18 @@ public static class Lexer {
 	
 	private static readonly Parser<char, Token> Equal =
 		Char('=').ThenReturn((Token)new Token.Equal());
+	
+	private static readonly Parser<char, Token> EqualEqual =
+		String("==").ThenReturn((Token)new Token.EqualEqual());
+
+	private static readonly Parser<char, Token> BangEqual =
+		String("!=").ThenReturn((Token)new Token.BangEqual());
+
+	private static readonly Parser<char, Token> PipePipe =
+		String("||").ThenReturn((Token)new Token.PipePipe());
+
+	private static readonly Parser<char, Token> AmpAmp =
+		String("&&").ThenReturn((Token)new Token.AmpAmp());
 
 	private static readonly Parser<char, Token> String =
 		from _ in Char('"')
@@ -97,6 +124,10 @@ public static class Lexer {
 	private static readonly Parser<char, Token> IntLiteral =
 		from digits in Digit.AtLeastOnceString()
 		select (Token)new Token.Int(int.Parse(digits));
+
+	private static readonly Parser<char, Token> BoolLiteral =
+		from value in Letter.ManyString().Where(s => s is "true" or "false")
+		select (Token)new Token.Bool(bool.Parse(value));
 
 	private static readonly Parser<char, Token> Keyword =
 		from name in Letter.ManyString().Where(name => name switch {
@@ -114,8 +145,9 @@ public static class Lexer {
 		from _leading in Whitespace.SkipMany()
 		from tokens in OneOf(
 			Colon, Semicolon, LParen, RParen,
-			Plus, Minus, Star, Slash, Bang, Equal,
-			String, Try(IntLiteral), Try(Keyword), Identifier
+			Plus, Minus, Star, Slash, Try(BangEqual), Bang, Try(EqualEqual), Equal,
+			Try(PipePipe), Try(AmpAmp),
+			String, Try(IntLiteral), Try(Keyword), Try(BoolLiteral), Identifier
 		).Before(Whitespace.SkipMany()).Many()
 		from _end in End
 		select tokens.ToList();

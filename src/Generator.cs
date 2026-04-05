@@ -15,6 +15,7 @@ public class FlukeProgram(Type programType) {
 public enum ExpressionType {
 	Int,
 	String,
+	Bool,
 	Unit,
 }
 
@@ -24,6 +25,7 @@ static class ExpressionTypeExt {
 			ExpressionType.Int => typeof(int),
 			ExpressionType.String => typeof(string),
 			ExpressionType.Unit => typeof(void),
+			ExpressionType.Bool => typeof(bool),
 			_ => throw new UnreachableException(),
 		};
 	}
@@ -102,23 +104,71 @@ public class Generator {
 				il.Emit(OpCodes.Ldc_I4, value);
 				return ExpressionType.Int;
 			}
+			case Expression.BoolLiteral(var value): {
+				il.Emit(value ? OpCodes.Ldc_I4_1 : OpCodes.Ldc_I4_0);
+				return ExpressionType.Bool;
+			}
 			case Expression.BinaryOp(var left, var op, var right): {
 				var left_type = BuildExpression(left);
 				var right_type = BuildExpression(right);
 
-				if (left_type != ExpressionType.Int || right_type != ExpressionType.Int)
+				var expectedType = op switch {
+					BinOp.And or BinOp.Or => ExpressionType.Bool,
+					_ => ExpressionType.Int
+				};
+				if (op is BinOp.Eq or BinOp.Neq) {
+					if (left_type != right_type)
+						throw new Exception(
+							$"Type mismatch. Can't call operator '{op}' on operands of different types '{left_type}' and '{right_type}'");
+				} else if (left_type != expectedType || right_type != expectedType) {
 					throw new Exception(
-						$"Type mismatch. Can't call operator '{op}' on operands of type '{left_type}' and '{right_type}'");
+						$"Type mismatch. Can't call operator '{op}' on operands of different types '{left_type}' and '{right_type}'");
+				}
 
 				switch (op) {
-					case Op.Add: il.Emit(OpCodes.Add); break;
-					case Op.Sub: il.Emit(OpCodes.Sub); break;
-					case Op.Mul: il.Emit(OpCodes.Mul); break;
-					case Op.Div: il.Emit(OpCodes.Div); break;
-					default: throw new Exception($"Operator not supported: {op}");
+					case BinOp.Add: il.Emit(OpCodes.Add); break;
+					case BinOp.Sub: il.Emit(OpCodes.Sub); break;
+					case BinOp.Mul: il.Emit(OpCodes.Mul); break;
+					case BinOp.Div: il.Emit(OpCodes.Div); break;
+					case BinOp.Eq:
+						il.Emit(OpCodes.Ceq);
+						return ExpressionType.Bool;
+					case BinOp.Neq:
+						il.Emit(OpCodes.Ceq);
+						il.Emit(OpCodes.Ldc_I4_0);
+						il.Emit(OpCodes.Ceq);
+						return ExpressionType.Bool;
+					case BinOp.And: il.Emit(OpCodes.And); break;
+					case BinOp.Or: il.Emit(OpCodes.Or); break;
+					default: throw new UnreachableException($"Operator '{op}' is not a valid binary operator.");
 				}
 
 				return left_type;
+			}
+			case Expression.UnaryOp(var op, var operand): {
+				var type = BuildExpression(operand);
+
+				switch (op) {
+					case UnOp.Neg:
+						if (type != ExpressionType.Int) {
+							throw new Exception(
+								$"Invalid Operator. Can't call operator '{op}' on operand of type '{type}'");
+						}
+
+						il.Emit(OpCodes.Neg);
+						return type;
+					case UnOp.Not:
+						if (type != ExpressionType.Bool) {
+							throw new Exception(
+								$"Invalid Operator. Can't call operator '{op}' on operand of type '{type}'");
+						}
+
+						il.Emit(OpCodes.Ldc_I4_0);
+						il.Emit(OpCodes.Ceq);
+						return type;
+					default:
+						throw new UnreachableException($"Operator '{op}' is not a valid unary operator.");
+				}
 			}
 			case Expression.Identifier(var name): {
 				var variable = currentScope.GetVar(name);
