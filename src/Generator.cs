@@ -1,6 +1,9 @@
 ﻿using System.Diagnostics;
 using System.Reflection;
 using System.Reflection.Emit;
+using System.Reflection.Metadata;
+using System.Reflection.Metadata.Ecma335;
+using System.Reflection.PortableExecutable;
 
 namespace fluke;
 
@@ -47,13 +50,41 @@ public class Generator {
 	private MethodBuilder currentMethod;
 	private Scope currentScope = new();
 
-	public FlukeProgram Generate(Ast ast) {
+	public FlukeProgram GenerateInMemory(Ast ast) {
 		var asmName = new AssemblyName("Fluke");
 		var builder = AssemblyBuilder.DefineDynamicAssembly(asmName, AssemblyBuilderAccess.Run);
-
 		var mod = builder.DefineDynamicModule("Fluke");
+		var t = GenerateCore(mod, ast);
+		return new FlukeProgram(t);
+	}
+
+	public void GenerateToFile(Ast ast, string outputPath) {
+		var asmName = new AssemblyName(Path.GetFileNameWithoutExtension(outputPath));
+		var builder = new PersistedAssemblyBuilder(asmName, typeof(object).Assembly);
+		var mod = builder.DefineDynamicModule(asmName.Name!);
+		GenerateCore(mod, ast);
+
+		var metadataBuilder = builder.GenerateMetadata(out var ilStream, out var fieldData);
+		var entryPointToken = MetadataTokens.MethodDefinitionHandle(currentMethod.MetadataToken);
+
+		var peHeaderBuilder = new PEHeaderBuilder(imageCharacteristics: Characteristics.ExecutableImage);
+		var peBuilder = new ManagedPEBuilder(
+			header: peHeaderBuilder,
+			metadataRootBuilder: new MetadataRootBuilder(metadataBuilder),
+			ilStream: ilStream,
+			mappedFieldData: fieldData,
+			entryPoint: entryPointToken);
+
+		var peBlob = new BlobBuilder();
+		peBuilder.Serialize(peBlob);
+
+		using var fileStream = new FileStream(outputPath, FileMode.Create, FileAccess.Write);
+		peBlob.WriteContentTo(fileStream);
+	}
+
+	private Type GenerateCore(ModuleBuilder mod, Ast ast) {
 		var type = mod.DefineType("Fluke.Program", TypeAttributes.Public | TypeAttributes.Class);
-		currentMethod = type.DefineMethod("Main", MethodAttributes.Public | MethodAttributes.Static);
+		currentMethod = type.DefineMethod("Main", MethodAttributes.Public | MethodAttributes.Static, typeof(void), Type.EmptyTypes);
 
 		var il = currentMethod.GetILGenerator();
 
@@ -63,8 +94,7 @@ public class Generator {
 
 		il.Emit(OpCodes.Ret);
 
-		var t = type.CreateType();
-		return new FlukeProgram(t);
+		return type.CreateType();
 	}
 
 	private void BuildStatement(Statement statement) {
