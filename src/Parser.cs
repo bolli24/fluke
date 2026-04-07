@@ -1,5 +1,6 @@
 using System.Diagnostics;
 using System.Linq.Expressions;
+using System.Reflection;
 using Pidgin;
 using static Pidgin.Parser;
 using static Pidgin.Parser<fluke.Token>;
@@ -15,12 +16,20 @@ public abstract record Statement {
 
 	public record VariableBinding(string name, Expression expr) : Statement;
 
+	public record FunctionDeclaration(
+		string name,
+		(string, string)[] parameters,
+		Expression.Block body,
+		string returnType) : Statement;
+
 	public override string ToString() {
 		return this switch {
 			IntrinsicCall(var name, null) => $"Intrinsic({name})",
 			IntrinsicCall(var name, var args) => $"Intrinsic({name}, {string.Join(", ", args)})",
 			ExpressionStatement(var expr) => $"Expr({expr})",
 			VariableBinding(var name, var expr) => $"Binding({name}, {expr})",
+			FunctionDeclaration(var name, var parameters, var body, var returnType) =>
+				$"Fn({name}({string.Join(", ", parameters.Select(p => $"{p.Item1}: {p.Item2}"))}) -> {returnType} {body})",
 			_ => throw new UnreachableException()
 		};
 	}
@@ -173,15 +182,10 @@ public static class Parser {
 		from _colon in Token(new Token.Colon())
 		from name in IdentifierName
 		from _lparen in Token(new Token.LParen())
-		from args in Try(
-			from arg in Expression
-			from _comma in Token(new Token.Comma())
-			select arg
-		).Many()
-		from extra in Expression.Optional()
+		from args in Expression.Separated(Token(new Token.Comma()))
+		from _ in Token(new Token.Comma()).Optional()
 		from _rparen in Token(new Token.RParen())
-		select (Statement)new Statement.IntrinsicCall(name,
-			extra.HasValue ? [..args, extra.Value] : args.ToArray());
+		select (Statement)new Statement.IntrinsicCall(name, args.ToArray());
 
 	private static readonly Parser<Token, Statement> ExpressionStatement =
 		from expr in Expression
@@ -194,14 +198,34 @@ public static class Parser {
 		from expression in Expression
 		select (Statement)new Statement.VariableBinding(name, expression);
 
+	private static readonly Parser<Token, (string, string)> TypedIdentifier =
+		from param_name in IdentifierName
+		from _colon in Token(new Token.Colon())
+		from param_type in IdentifierName
+		select (param_name, param_type);
+
+	private static readonly Parser<Token, Statement> FunctionDecl =
+		from _fn in Token(new Token.Keyword("fn"))
+		from name in IdentifierName
+		from _lparen in Token(new Token.LParen())
+		from parameters in TypedIdentifier.Separated(Token(new Token.Comma()))
+		from _ in Token(new Token.Comma()).Optional()
+		from _rparen in Token(new Token.RParen())
+		from _colon in Token(new Token.Colon())
+		from returnType in IdentifierName
+		from body in Block
+		select (Statement)new Statement.FunctionDeclaration(name, parameters.ToArray(), body, returnType);
+
+
 	private static readonly Parser<Token, Statement> Statement =
 		Try(from statement in OneOf(IntrinsicCall, ExpressionStatement, VariableBinding)
-			from _ in Token(new Token.Semicolon())
-			select statement)
-		.Or(Try(
-			from block in Block
-			from _ in Not(Token(new Token.RBrace()))
-			select (Statement)new Statement.ExpressionStatement(block)));
+				from _ in Token(new Token.Semicolon())
+				select statement)
+			.Or(FunctionDecl)
+			.Or(Try(
+				from block in Block
+				from _ in Not(Token(new Token.RBrace()))
+				select (Statement)new Statement.ExpressionStatement(block)));
 
 	private static readonly Parser<Token, Ast> Program =
 		from stmts in Statement.Many()

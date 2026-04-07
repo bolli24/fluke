@@ -1,4 +1,4 @@
-﻿using System.Diagnostics;
+using System.Diagnostics;
 using System.Reflection;
 using System.Reflection.Emit;
 using System.Reflection.Metadata;
@@ -34,21 +34,30 @@ static class ExpressionTypeExt {
 	}
 }
 
+internal abstract record Symbol {
+	public record Variable(ExpressionType type, LocalBuilder? local) : Symbol;
+	public record Parameter(int index, ExpressionType type) : Symbol;
+	public record Function(MethodBuilder method, ExpressionType returnType) : Symbol;
+}
+
 internal class Scope {
-	private readonly Dictionary<string, (ExpressionType type, LocalBuilder? local)> variables = new();
+	private readonly Dictionary<string, Symbol> symbols = new();
 
-	public (ExpressionType type, LocalBuilder? local)? GetVar(string name) {
-		return variables.TryGetValue(name, out var value) ? value : null;
-	}
+	public Symbol? Get(string name) =>
+		symbols.TryGetValue(name, out var s) ? s : null;
 
-	public void SetVar(string name, (ExpressionType type, LocalBuilder? local) var) {
-		variables[name] = var;
-	}
+	public void Define(string name, Symbol symbol) =>
+		symbols[name] = symbol;
+
+	public bool Has(string name) =>
+		symbols.ContainsKey(name);
 }
 
 public class Generator {
 	private MethodBuilder currentMethod;
-	private Scope currentScope = new();
+	private readonly Stack<Scope> scopes = new();
+	private readonly Dictionary<string, Symbol.Function> functions = new();
+	private readonly Stack<string> nameStack = new();
 
 	public FlukeProgram GenerateInMemory(Ast ast) {
 		var asmName = new AssemblyName("Fluke");
@@ -84,10 +93,16 @@ public class Generator {
 
 	private Type GenerateCore(ModuleBuilder mod, Ast ast) {
 		var type = mod.DefineType("Fluke.Program", TypeAttributes.Public | TypeAttributes.Class);
-		currentMethod = type.DefineMethod("Main", MethodAttributes.Public | MethodAttributes.Static, typeof(void), Type.EmptyTypes);
+		currentMethod = type.DefineMethod("Main", MethodAttributes.Public | MethodAttributes.Static, typeof(void),
+			Type.EmptyTypes);
 
+		scopes.Push(new Scope());
+
+		// Pass 1: register all function signatures (recursive)
+		CollectFunctions(ast.Statements, type, "");
+
+		// Pass 2: generate code
 		var il = currentMethod.GetILGenerator();
-
 		foreach (var statement in ast.Statements) {
 			BuildStatement(statement);
 		}
@@ -96,6 +111,42 @@ public class Generator {
 
 		return type.CreateType();
 	}
+
+	private void CollectFunctions(IEnumerable<Statement> statements, TypeBuilder type, string prefix) {
+		foreach (var stmt in statements) {
+			switch (stmt) {
+				case Statement.FunctionDeclaration decl: {
+					var mangledName = prefix == "" ? decl.name : prefix + "$" + decl.name;
+					var paramTypes = decl.parameters.Select(p => ParseType(p.Item2).AsType()).ToArray();
+					var returnType = ParseType(decl.returnType);
+					var mb = type.DefineMethod(mangledName,
+						MethodAttributes.Public | MethodAttributes.Static,
+						returnType.AsType(), paramTypes);
+					functions[mangledName] = new Symbol.Function(mb, returnType);
+					CollectFunctions(decl.body.body, type, mangledName);
+					break;
+				}
+				case Statement.ExpressionStatement(Expression.Block(var body, _)):
+					CollectFunctions(body, type, prefix);
+					break;
+				case Statement.VariableBinding(_, Expression.Block(var body, _)):
+					CollectFunctions(body, type, prefix);
+					break;
+			}
+		}
+	}
+
+	private string MangledName(string name) {
+		return nameStack.Count == 0 ? name : nameStack.Peek() + "$" + name;
+	}
+
+	private static ExpressionType ParseType(string name) => name switch {
+		"int"    => ExpressionType.Int,
+		"bool"   => ExpressionType.Bool,
+		"string" => ExpressionType.String,
+		"unit"   => ExpressionType.Unit,
+		_ => throw new Exception($"Unknown type '{name}'")
+	};
 
 	private void BuildStatement(Statement statement) {
 		var il = currentMethod.GetILGenerator();
@@ -139,7 +190,34 @@ public class Generator {
 				}
 
 				Debug.Assert(type == ExpressionType.Unit || local != null);
-				currentScope.SetVar(name, (type, local));
+				Define(name, new Symbol.Variable(type, local));
+				break;
+			}
+			case Statement.FunctionDeclaration(var name, var parameters, var body, _): {
+				var mangledName = MangledName(name);
+				var fn = functions[mangledName];
+				Define(name, fn);
+
+				var savedMethod = currentMethod;
+				currentMethod = fn.method;
+				nameStack.Push(mangledName);
+
+				scopes.Push(new Scope());
+				for (var i = 0; i < parameters.Length; i++) {
+					var (pName, pType) = parameters[i];
+					scopes.Peek().Define(pName, new Symbol.Parameter(i, ParseType(pType)));
+				}
+
+				var fnIl = currentMethod.GetILGenerator();
+				foreach (var stmt in body.body)
+					BuildStatement(stmt);
+				if (body.tail != null)
+					BuildExpression(body.tail);
+				fnIl.Emit(OpCodes.Ret);
+
+				scopes.Pop();
+				nameStack.Pop();
+				currentMethod = savedMethod;
 				break;
 			}
 			case Statement.ExpressionStatement(var expr): {
@@ -233,25 +311,49 @@ public class Generator {
 				}
 			}
 			case Expression.Identifier(var name): {
-				var variable = currentScope.GetVar(name);
-				if (variable is null) {
+				var symbol = Resolve(name);
+				if (symbol is null)
 					throw new Exception($"Use of undeclared identifier '{name}'");
+
+				switch (symbol) {
+					case Symbol.Variable(var type, var local): {
+						Debug.Assert(type == ExpressionType.Unit || local != null);
+						if (local != null)
+							il.Emit(OpCodes.Ldloc, local);
+						return type;
+					}
+					case Symbol.Parameter(var index, var type): {
+						il.Emit(OpCodes.Ldarg, index);
+						return type;
+					}
+					case Symbol.Function: {
+						throw new Exception($"'{name}' is a function and cannot be used as a value");
+					}
+					default:
+						throw new UnreachableException();
 				}
-
-				var (type, local) = variable.Value;
-				Debug.Assert(type == ExpressionType.Unit || local != null);
-				if (local != null)
-					il.Emit(OpCodes.Ldloc, local);
-
-				return type;
 			}
 			case Expression.Block(var body, var tail): {
+				scopes.Push(new Scope());
 				foreach (var stmt in body)
 					BuildStatement(stmt);
-				return tail != null ? BuildExpression(tail) : ExpressionType.Unit;
+				var returnType = tail != null ? BuildExpression(tail) : ExpressionType.Unit;
+				scopes.Pop();
+				return returnType;
 			}
 			default:
 				throw new Exception($"Expression not supported: {expression}");
 		}
 	}
+
+	private Symbol? Resolve(string name) {
+		foreach (var scope in scopes) {
+			var symbol = scope.Get(name);
+			if (symbol != null) return symbol;
+		}
+		return null;
+	}
+
+	private void Define(string name, Symbol symbol) =>
+		scopes.Peek().Define(name, symbol);
 }

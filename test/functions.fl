@@ -1,0 +1,26 @@
+fn add(a: int, b: int): int {
+    a + b
+}
+
+fn always_true(): bool {
+    true
+}
+
+fn no_op(): unit {
+    :print("no_op called");
+}
+
+fn outer(): unit {
+    fn inner(): unit {
+        :print("nested");
+    }
+    :print("outer");
+}
+
+fn block_scoped(): unit {
+    {
+        fn hidden(): unit {
+            :print("block-scoped");
+        }
+    };
+}
