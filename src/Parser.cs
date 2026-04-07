@@ -198,8 +198,10 @@ public static class Parser {
 		Try(from statement in OneOf(IntrinsicCall, ExpressionStatement, VariableBinding)
 			from _ in Token(new Token.Semicolon())
 			select statement)
-		.Or(from block in Block
-			select (Statement)new Statement.ExpressionStatement(block));
+		.Or(Try(
+			from block in Block
+			from _ in Not(Token(new Token.RBrace()))
+			select (Statement)new Statement.ExpressionStatement(block)));
 
 	private static readonly Parser<Token, Ast> Program =
 		from stmts in Statement.Many()
