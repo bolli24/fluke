@@ -138,6 +138,12 @@ public class Generator {
 				currentScope.SetVar(name, (type, local));
 				break;
 			}
+			case Statement.ExpressionStatement(var expr): {
+				var type = BuildExpression(expr);
+				if (type != ExpressionType.Unit)
+					il.Emit(OpCodes.Pop);
+				break;
+			}
 			default:
 				throw new Exception($"Statement not supported: {statement}");
 		}
@@ -160,21 +166,21 @@ public class Generator {
 				return ExpressionType.Bool;
 			}
 			case Expression.BinaryOp(var left, var op, var right): {
-				var left_type = BuildExpression(left);
-				var right_type = BuildExpression(right);
+				var leftType = BuildExpression(left);
+				var rightType = BuildExpression(right);
 
 				var expectedType = op switch {
 					BinOp.And or BinOp.Or => ExpressionType.Bool,
 					_ => ExpressionType.Int
 				};
 				if (op is BinOp.Eq or BinOp.Neq) {
-					if (left_type != right_type)
+					if (leftType != rightType)
 						throw new Exception(
-							$"Type mismatch. Can't call operator '{op}' on operands of different types '{left_type}' and '{right_type}'");
+							$"Type mismatch. Can't call operator '{op}' on operands of different types '{leftType}' and '{rightType}'");
 				}
-				else if (left_type != expectedType || right_type != expectedType) {
+				else if (leftType != expectedType || rightType != expectedType) {
 					throw new Exception(
-						$"Type mismatch. Can't call operator '{op}' on operands of different types '{left_type}' and '{right_type}'");
+						$"Type mismatch. Can't call operator '{op}' on operands of different types '{leftType}' and '{rightType}'");
 				}
 
 				switch (op) {
@@ -195,7 +201,7 @@ public class Generator {
 					default: throw new UnreachableException($"Operator '{op}' is not a valid binary operator.");
 				}
 
-				return left_type;
+				return leftType;
 			}
 			case Expression.UnaryOp(var op, var operand): {
 				var type = BuildExpression(operand);
@@ -232,6 +238,11 @@ public class Generator {
 				il.Emit(OpCodes.Ldloc, local);
 
 				return type;
+			}
+			case Expression.Block(var body, var tail): {
+				foreach (var stmt in body)
+					BuildStatement(stmt);
+				return tail != null ? BuildExpression(tail) : ExpressionType.Unit;
 			}
 			default:
 				throw new Exception($"Expression not supported: {expression}");

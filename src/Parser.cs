@@ -1,4 +1,5 @@
 using System.Diagnostics;
+using System.Linq.Expressions;
 using Pidgin;
 using static Pidgin.Parser;
 using static Pidgin.Parser<fluke.Token>;
@@ -14,7 +15,7 @@ public abstract record Statement {
 
 	public record VariableBinding(string name, Expression expr) : Statement;
 
-	public sealed override string ToString() {
+	public override string ToString() {
 		return this switch {
 			IntrinsicCall(var name, null) => $"Intrinsic({name})",
 			IntrinsicCall(var name, var args) => $"Intrinsic({name}, {string.Join(", ", args)})",
@@ -54,6 +55,8 @@ public abstract record Expression {
 
 	public record UnaryOp(UnOp op, Expression operand) : Expression;
 
+	public record Block(Statement[] body, Expression? tail) : Expression;
+
 	public sealed override string ToString() {
 		return this switch {
 			StringLiteral(var v) => $"\"{v}\"",
@@ -62,6 +65,9 @@ public abstract record Expression {
 			Identifier(var n) => n,
 			BinaryOp(var l, var op, var r) => $"({l} {op} {r})",
 			UnaryOp(var op, var e) => $"({op}{e})",
+			Block(var body, var tail) =>
+				"Block {\n" + string.Join("\n", body.Select(s => "\t" + s)) +
+				(tail != null ? "\n\t" + tail : "") + "\n}",
 			_ => throw new UnreachableException()
 		};
 	}
@@ -76,7 +82,13 @@ public static class Parser {
 		from t in Token(t => t is Token.Identifier)
 		select ((Token.Identifier)t).name;
 
-	// Atoms: literals, identifiers, parenthesized expressions
+	private static readonly Parser<Token, Expression.Block> Block = from _l in Token(new Token.LBrace())
+		from stmts in Rec(() => Statement).Many()
+		from tail in Rec(() => Expression).Optional()
+		from _r in Token(new Token.RBrace())
+		select new Expression.Block(stmts.ToArray(), tail.GetValueOrDefault());
+
+	// Atoms: literals, identifiers, parenthesized expressions, blocks
 	private static readonly Parser<Token, Expression> Atom =
 		(from t in Token(t => t is Token.Int)
 			select (Expression)new Expression.IntLiteral(((Token.Int)t).value))
@@ -89,7 +101,8 @@ public static class Parser {
 		.Or(from _l in Token(new Token.LParen())
 			from e in Rec(() => LogicalOr)
 			from _r in Token(new Token.RParen())
-			select e);
+			select e)
+		.Or(from block in Block select (Expression)block);
 
 	// Unary: -x, !x
 	private static readonly Parser<Token, Expression> Unary =
@@ -182,9 +195,11 @@ public static class Parser {
 		select (Statement)new Statement.VariableBinding(name, expression);
 
 	private static readonly Parser<Token, Statement> Statement =
-		from statement in OneOf(IntrinsicCall, ExpressionStatement, VariableBinding)
-		from _ in Token(new Token.Semicolon())
-		select statement;
+		Try(from statement in OneOf(IntrinsicCall, ExpressionStatement, VariableBinding)
+			from _ in Token(new Token.Semicolon())
+			select statement)
+		.Or(from block in Block
+			select (Statement)new Statement.ExpressionStatement(block));
 
 	private static readonly Parser<Token, Ast> Program =
 		from stmts in Statement.Many()

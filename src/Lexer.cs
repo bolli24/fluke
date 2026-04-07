@@ -17,6 +17,10 @@ public abstract record Token {
 	public record LParen : Token;
 
 	public record RParen : Token;
+	
+	public record LBrace : Token;
+
+	public record RBrace : Token;
 
 	public record Plus : Token;
 
@@ -53,6 +57,8 @@ public abstract record Token {
 			Comma => "Comma",
 			LParen => "LParen",
 			RParen => "RParen",
+			LBrace => "LBrace",
+			RBrace => "RBrace",
 			Plus => "Plus",
 			Minus => "Minus",
 			Star => "Star",
@@ -90,6 +96,12 @@ public static class Lexer {
 
 	private static readonly Parser<char, Token> RParen =
 		Char(')').ThenReturn((Token)new Token.RParen());
+	
+	private static readonly Parser<char, Token> LBrace =
+		Char('{').ThenReturn((Token)new Token.LBrace());
+
+	private static readonly Parser<char, Token> RBrace =
+		Char('}').ThenReturn((Token)new Token.RBrace());
 
 	private static readonly Parser<char, Token> Plus =
 		Char('+').ThenReturn((Token)new Token.Plus());
@@ -150,7 +162,7 @@ public static class Lexer {
 	private static readonly Parser<char, List<Token>> Tokens =
 		from _leading in Whitespace.SkipMany()
 		from tokens in OneOf(
-			Colon, Semicolon, Comma, LParen, RParen,
+			Colon, Semicolon, Comma, LParen, RParen, LBrace, RBrace,
 			Plus, Minus, Star, Slash, Try(BangEqual), Bang, Try(EqualEqual), Equal,
 			Try(PipePipe), Try(AmpAmp),
 			String, Try(IntLiteral), Try(Keyword), Try(BoolLiteral), Identifier
