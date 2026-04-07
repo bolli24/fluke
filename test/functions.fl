@@ -6,7 +6,7 @@ fn always_true(): bool {
     true
 }
 
-fn no_op(): unit {
+fn no_op() {
     :print("no_op called");
 }
 

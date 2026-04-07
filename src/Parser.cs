@@ -221,10 +221,14 @@ public static class Parser {
 		from parameters in TypedIdentifier.Separated(Token(new Token.Comma()))
 		from _ in Token(new Token.Comma()).Optional()
 		from _rparen in Token(new Token.RParen())
-		from _colon in Token(new Token.Colon())
-		from returnType in IdentifierName
+		from returnType in Try(
+				from _colon in Token(new Token.Colon())
+				from t in IdentifierName
+				select t)
+			.Optional()
 		from body in Block
-		select (Statement)new Statement.FunctionDeclaration(name, parameters.ToArray(), body, returnType);
+		select (Statement)new Statement.FunctionDeclaration(name, parameters.ToArray(), body,
+			returnType.GetValueOrDefault("unit"));
 
 	private static readonly Parser<Token, Statement> Statement =
 		Try(from statement in OneOf(IntrinsicCall, ExpressionStatement, VariableBinding)
