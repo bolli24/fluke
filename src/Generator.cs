@@ -35,13 +35,13 @@ static class ExpressionTypeExt {
 }
 
 internal class Scope {
-	private readonly Dictionary<string, (ExpressionType type, LocalBuilder local)> variables = new();
+	private readonly Dictionary<string, (ExpressionType type, LocalBuilder? local)> variables = new();
 
-	public (ExpressionType type, LocalBuilder local)? GetVar(string name) {
+	public (ExpressionType type, LocalBuilder? local)? GetVar(string name) {
 		return variables.TryGetValue(name, out var value) ? value : null;
 	}
 
-	public void SetVar(string name, (ExpressionType type, LocalBuilder local) var) {
+	public void SetVar(string name, (ExpressionType type, LocalBuilder? local) var) {
 		variables[name] = var;
 	}
 }
@@ -132,9 +132,13 @@ public class Generator {
 			}
 			case Statement.VariableBinding(var name, var expression): {
 				var type = BuildExpression(expression);
-				var local = il.DeclareLocal(typeof(int));
-				il.Emit(OpCodes.Stloc, local);
+				LocalBuilder? local = null;
+				if (type != ExpressionType.Unit) {
+					local = il.DeclareLocal(type.AsType());
+					il.Emit(OpCodes.Stloc, local);
+				}
 
+				Debug.Assert(type == ExpressionType.Unit || local != null);
 				currentScope.SetVar(name, (type, local));
 				break;
 			}
@@ -235,7 +239,9 @@ public class Generator {
 				}
 
 				var (type, local) = variable.Value;
-				il.Emit(OpCodes.Ldloc, local);
+				Debug.Assert(type == ExpressionType.Unit || local != null);
+				if (local != null)
+					il.Emit(OpCodes.Ldloc, local);
 
 				return type;
 			}
