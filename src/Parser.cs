@@ -24,7 +24,6 @@ public abstract record Statement {
 
 	public override string ToString() {
 		return this switch {
-			IntrinsicCall(var name, null) => $"Intrinsic({name})",
 			IntrinsicCall(var name, var args) => $"Intrinsic({name}, {string.Join(", ", args)})",
 			ExpressionStatement(var expr) => $"Expr({expr})",
 			VariableBinding(var name, var expr) => $"Binding({name}, {expr})",
@@ -66,6 +65,8 @@ public abstract record Expression {
 
 	public record Block(Statement[] body, Expression? tail) : Expression;
 
+	public record FunctionCall(string name, Expression[] args) : Expression;
+
 	public sealed override string ToString() {
 		return this switch {
 			StringLiteral(var v) => $"\"{v}\"",
@@ -77,6 +78,7 @@ public abstract record Expression {
 			Block(var body, var tail) =>
 				"Block {\n" + string.Join("\n", body.Select(s => "\t" + s)) +
 				(tail != null ? "\n\t" + tail : "") + "\n}",
+			FunctionCall(var n, var args) => $"{n}({string.Join(", ", args.Select(a => a.ToString()))})",
 			_ => throw new UnreachableException()
 		};
 	}
@@ -105,6 +107,10 @@ public static class Parser {
 			select (Expression)new Expression.BoolLiteral(((Token.Bool)t).value))
 		.Or(from s in String
 			select (Expression)new Expression.StringLiteral(s))
+		.Or(Try(
+			from n in IdentifierName
+			from args in CallArgs
+			select (Expression)new Expression.FunctionCall(n, args.ToArray())))
 		.Or(from n in IdentifierName
 			select (Expression)new Expression.Identifier(n))
 		.Or(from _l in Token(new Token.LParen())
@@ -178,13 +184,17 @@ public static class Parser {
 
 	private static readonly Parser<Token, Expression> Expression = LogicalOr;
 
-	private static readonly Parser<Token, Statement> IntrinsicCall =
-		from _colon in Token(new Token.Colon())
-		from name in IdentifierName
+	private static readonly Parser<Token, IEnumerable<Expression>> CallArgs =
 		from _lparen in Token(new Token.LParen())
 		from args in Expression.Separated(Token(new Token.Comma()))
 		from _ in Token(new Token.Comma()).Optional()
 		from _rparen in Token(new Token.RParen())
+		select args;
+
+	private static readonly Parser<Token, Statement> IntrinsicCall =
+		from _colon in Token(new Token.Colon())
+		from name in IdentifierName
+		from args in CallArgs
 		select (Statement)new Statement.IntrinsicCall(name, args.ToArray());
 
 	private static readonly Parser<Token, Statement> ExpressionStatement =
@@ -215,7 +225,6 @@ public static class Parser {
 		from returnType in IdentifierName
 		from body in Block
 		select (Statement)new Statement.FunctionDeclaration(name, parameters.ToArray(), body, returnType);
-
 
 	private static readonly Parser<Token, Statement> Statement =
 		Try(from statement in OneOf(IntrinsicCall, ExpressionStatement, VariableBinding)

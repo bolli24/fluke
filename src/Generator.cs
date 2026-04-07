@@ -36,8 +36,10 @@ static class ExpressionTypeExt {
 
 internal abstract record Symbol {
 	public record Variable(ExpressionType type, LocalBuilder? local) : Symbol;
+
 	public record Parameter(int index, ExpressionType type) : Symbol;
-	public record Function(MethodBuilder method, ExpressionType returnType) : Symbol;
+
+	public record Function(MethodBuilder method, ExpressionType returnType, ExpressionType[] parameterTypes) : Symbol;
 }
 
 internal class Scope {
@@ -122,7 +124,8 @@ public class Generator {
 					var mb = type.DefineMethod(mangledName,
 						MethodAttributes.Public | MethodAttributes.Static,
 						returnType.AsType(), paramTypes);
-					functions[mangledName] = new Symbol.Function(mb, returnType);
+					var parameterTypes = decl.parameters.Select(p => ParseType(p.Item2)).ToArray();
+					functions[mangledName] = new Symbol.Function(mb, returnType, parameterTypes);
 					CollectFunctions(decl.body.body, type, mangledName);
 					break;
 				}
@@ -141,10 +144,10 @@ public class Generator {
 	}
 
 	private static ExpressionType ParseType(string name) => name switch {
-		"int"    => ExpressionType.Int,
-		"bool"   => ExpressionType.Bool,
+		"int" => ExpressionType.Int,
+		"bool" => ExpressionType.Bool,
 		"string" => ExpressionType.String,
-		"unit"   => ExpressionType.Unit,
+		"unit" => ExpressionType.Unit,
 		_ => throw new Exception($"Unknown type '{name}'")
 	};
 
@@ -326,12 +329,32 @@ public class Generator {
 						il.Emit(OpCodes.Ldarg, index);
 						return type;
 					}
+					// Defensive: FunctionCall is parsed before Identifier so a bare function name shouldn't reach here
 					case Symbol.Function: {
 						throw new Exception($"'{name}' is a function and cannot be used as a value");
 					}
 					default:
 						throw new UnreachableException();
 				}
+			}
+			case Expression.FunctionCall(var name, var args): {
+				var symbol = Resolve(name);
+				if (symbol is null)
+					throw new Exception($"Use of undefined function '{name}'");
+				if (symbol is not Symbol.Function function)
+					throw new Exception($"'{name}' is not a function");
+
+				var paramTypes = function.parameterTypes;
+				if (args.Length != paramTypes.Length)
+					throw new Exception($"'{name}' expects {paramTypes.Length} argument(s), got {args.Length}");
+
+				for (var i = 0; i < args.Length; i++) {
+					var argType = BuildExpression(args[i]);
+					if (argType != paramTypes[i])
+						throw new Exception($"'{name}' argument {i + 1}: expected '{paramTypes[i]}', got '{argType}'");
+				}
+				il.Emit(OpCodes.Call, function.method);
+				return function.returnType;
 			}
 			case Expression.Block(var body, var tail): {
 				scopes.Push(new Scope());
@@ -351,6 +374,7 @@ public class Generator {
 			var symbol = scope.Get(name);
 			if (symbol != null) return symbol;
 		}
+
 		return null;
 	}
 

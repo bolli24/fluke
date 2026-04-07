@@ -14,6 +14,7 @@ fn outer(): unit {
     fn inner(): unit {
         :print("nested");
     }
+    inner();
     :print("outer");
 }
 
@@ -22,5 +23,13 @@ fn block_scoped(): unit {
         fn hidden(): unit {
             :print("block-scoped");
         }
+        hidden();
     };
 }
+
+:assert(add(1, 2) == 3);
+:assert(add(10, add(3, 4)) == 17);
+:assert(always_true());
+no_op();
+outer();
+block_scoped();
