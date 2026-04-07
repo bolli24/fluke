@@ -1,0 +1,39 @@
+let a = {
+    let x = 3;
+    let y = 4;
+    x + y
+};
+:assert(a == 7);
+
+let b = {
+    let inner = 10;
+    inner * 2
+};
+:assert(b == 20);
+
+let outer = 100;
+{
+    let inner = 50;
+    :assert(outer + inner == 150);
+};
+
+let unit = {
+    :print("side effect");
+};
+
+let nested = {
+    let p = {
+        6 * 7
+    };
+    p - 2
+};
+:assert(nested == 40);
+
+:assert({true});
+
+:assert({{true}});
+
+let u = {
+    :print("unit binding");
+};
+let v = u;
