@@ -148,7 +148,7 @@ public class Generator {
 		"bool" => ExpressionType.Bool,
 		"string" => ExpressionType.String,
 		"unit" => ExpressionType.Unit,
-		_ => throw new Exception($"Unknown type '{name}'")
+		_ => throw new CompileException($"Unknown type '{name}'")
 	};
 
 	private void BuildStatement(Statement statement) {
@@ -164,12 +164,12 @@ public class Generator {
 				break;
 			}
 			case Statement.IntrinsicCall("print", var args): {
-				throw new Exception($"Too many arguments: {args.Length}. Intrinsic 'print' requires 0 or 1 arguments.");
+				throw new CompileException($"Too many arguments: {args.Length}. Intrinsic 'print' requires 0 or 1 arguments.");
 			}
 			case Statement.IntrinsicCall("assert", [var arg]): {
 				var type = BuildExpression(arg);
 				if (type != ExpressionType.Bool)
-					throw new Exception($"Invalid type '{type}'. Expected: 'Bool'");
+					throw new CompileException($"Invalid type '{type}'. Expected: 'Bool'");
 
 				var okLabel = il.DefineLabel();
 				il.Emit(OpCodes.Brtrue, okLabel);
@@ -181,7 +181,7 @@ public class Generator {
 				break;
 			}
 			case Statement.IntrinsicCall("assert", var args): {
-				throw new Exception(
+				throw new CompileException(
 					$"Wrong number of arguments: {args.Length}. Intrinsic 'assert' requires 1 argument.");
 			}
 			case Statement.VariableBinding(var name, var expression): {
@@ -230,7 +230,7 @@ public class Generator {
 				break;
 			}
 			default:
-				throw new Exception($"Statement not supported: {statement}");
+				throw new CompileException($"Statement not supported: {statement}");
 		}
 	}
 
@@ -260,11 +260,11 @@ public class Generator {
 				};
 				if (op is BinOp.Eq or BinOp.Neq) {
 					if (leftType != rightType)
-						throw new Exception(
+						throw new CompileException(
 							$"Type mismatch. Can't call operator '{op}' on operands of different types '{leftType}' and '{rightType}'");
 				}
 				else if (leftType != expectedType || rightType != expectedType) {
-					throw new Exception(
+					throw new CompileException(
 						$"Type mismatch. Can't call operator '{op}' on operands of different types '{leftType}' and '{rightType}'");
 				}
 
@@ -294,7 +294,7 @@ public class Generator {
 				switch (op) {
 					case UnOp.Neg:
 						if (type != ExpressionType.Int) {
-							throw new Exception(
+							throw new CompileException(
 								$"Invalid Operator. Can't call operator '{op}' on operand of type '{type}'");
 						}
 
@@ -302,7 +302,7 @@ public class Generator {
 						return type;
 					case UnOp.Not:
 						if (type != ExpressionType.Bool) {
-							throw new Exception(
+							throw new CompileException(
 								$"Invalid Operator. Can't call operator '{op}' on operand of type '{type}'");
 						}
 
@@ -316,7 +316,7 @@ public class Generator {
 			case Expression.Identifier(var name): {
 				var symbol = Resolve(name);
 				if (symbol is null)
-					throw new Exception($"Use of undeclared identifier '{name}'");
+					throw new CompileException($"Use of undeclared identifier '{name}'");
 
 				switch (symbol) {
 					case Symbol.Variable(var type, var local): {
@@ -331,7 +331,7 @@ public class Generator {
 					}
 					// Defensive: FunctionCall is parsed before Identifier so a bare function name shouldn't reach here
 					case Symbol.Function: {
-						throw new Exception($"'{name}' is a function and cannot be used as a value");
+						throw new CompileException($"'{name}' is a function and cannot be used as a value");
 					}
 					default:
 						throw new UnreachableException();
@@ -340,18 +340,18 @@ public class Generator {
 			case Expression.FunctionCall(var name, var args): {
 				var symbol = Resolve(name);
 				if (symbol is null)
-					throw new Exception($"Use of undefined function '{name}'");
+					throw new CompileException($"Use of undefined function '{name}'");
 				if (symbol is not Symbol.Function function)
-					throw new Exception($"'{name}' is not a function");
+					throw new CompileException($"'{name}' is not a function");
 
 				var paramTypes = function.parameterTypes;
 				if (args.Length != paramTypes.Length)
-					throw new Exception($"'{name}' expects {paramTypes.Length} argument(s), got {args.Length}");
+					throw new CompileException($"'{name}' expects {paramTypes.Length} argument(s), got {args.Length}");
 
 				for (var i = 0; i < args.Length; i++) {
 					var argType = BuildExpression(args[i]);
 					if (argType != paramTypes[i])
-						throw new Exception($"'{name}' argument {i + 1}: expected '{paramTypes[i]}', got '{argType}'");
+						throw new CompileException($"'{name}' argument {i + 1}: expected '{paramTypes[i]}', got '{argType}'");
 				}
 				il.Emit(OpCodes.Call, function.method);
 				return function.returnType;
@@ -365,7 +365,7 @@ public class Generator {
 				return returnType;
 			}
 			default:
-				throw new Exception($"Expression not supported: {expression}");
+				throw new CompileException($"Expression not supported: {expression}");
 		}
 	}
 
