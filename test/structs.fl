@@ -3,6 +3,12 @@ struct Point {
     y: int,
 }
 
+struct Color {
+    r: int,
+    g: int,
+    b: int,
+}
+
 struct Unit {}
 
 struct Person {
@@ -19,3 +25,10 @@ struct Node {
 struct Leaf {
     value: int,
 }
+
+let p = Point { x: 1, y: 2 };
+let black = Color { r: 0, g: 0, b: 0 };
+let u = Unit {};
+let leaf = Leaf { value: 5 };
+let node = Node { value: 1, next: Leaf { value: 2 } };
+let person = Person { age: 30, active: true, pos: Point { x: 3, y: 4 } };

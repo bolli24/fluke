@@ -24,7 +24,7 @@ internal abstract record ExpressionType {
 
 	private record UnitType : ExpressionType;
 
-	public record Struct(Type clrType) : ExpressionType;
+	public record Struct(Type clrType, IReadOnlyDictionary<string, ExpressionType> fields) : ExpressionType;
 
 	public static readonly ExpressionType Int = new IntType();
 	public static readonly ExpressionType Bool = new BoolType();
@@ -36,7 +36,7 @@ internal abstract record ExpressionType {
 		BoolType => "bool",
 		StringType => "string",
 		UnitType => "unit",
-		Struct(var t) => t.Name,
+		Struct(var t, _) => t.Name,
 		_ => throw new UnreachableException(),
 	};
 
@@ -45,7 +45,7 @@ internal abstract record ExpressionType {
 		BoolType => typeof(bool),
 		StringType => typeof(string),
 		UnitType => typeof(void),
-		Struct(var t) => t,
+		Struct(var t, _) => t,
 		_ => throw new UnreachableException(),
 	};
 }
@@ -57,7 +57,7 @@ internal abstract record Symbol {
 
 	public record Function(MethodBuilder method, ExpressionType returnType, ExpressionType[] parameterTypes) : Symbol;
 
-	public record StructType(ExpressionType type) : Symbol;
+	public record StructType(ExpressionType.Struct type) : Symbol;
 }
 
 internal class Scope {
@@ -145,7 +145,7 @@ public class Generator {
 			var sb = mod.DefineType(sName,
 				TypeAttributes.Public | TypeAttributes.Sealed | TypeAttributes.SequentialLayout,
 				typeof(ValueType));
-			structTypes[sName] = new ExpressionType.Struct(sb);
+			structTypes[sName] = new ExpressionType.Struct(sb, new Dictionary<string, ExpressionType>());
 			pendingStructs[sName] = (sb, sFields.Select(f => (f.Item1, f.Item2)).ToArray());
 		}
 
@@ -198,10 +198,14 @@ public class Generator {
 			foreach (var (_, fieldTypeName) in fields)
 				if (pendingStructs.ContainsKey(fieldTypeName))
 					FinalizeStruct(fieldTypeName);
-			foreach (var (fieldName, fieldTypeName) in fields)
-				sb.DefineField(fieldName, ParseType(fieldTypeName).AsType(), FieldAttributes.Public);
+			var fieldTypes = new Dictionary<string, ExpressionType>();
+			foreach (var (fieldName, fieldTypeName) in fields) {
+				var fieldType = ParseType(fieldTypeName);
+				sb.DefineField(fieldName, fieldType.AsType(), FieldAttributes.Public);
+				fieldTypes[fieldName] = fieldType;
+			}
 			var createdType = sb.CreateType();
-			structTypes[name] = new ExpressionType.Struct(createdType);
+			structTypes[name] = new ExpressionType.Struct(createdType, fieldTypes);
 			visitingPath.RemoveAt(visitingPath.Count - 1);
 			visitingSet.Remove(name);
 			finalized.Add(name);
@@ -457,10 +461,9 @@ public class Generator {
 				var symbol = Resolve(name);
 				if (symbol is null)
 					throw new CompileException($"Use of undefined function '{name}'");
-				if (symbol is not Symbol.Function function)
+				if (symbol is not Symbol.Function(var method, var returnType, var paramTypes))
 					throw new CompileException($"'{name}' is not a function");
 
-				var paramTypes = function.parameterTypes;
 				if (args.Length != paramTypes.Length)
 					throw new CompileException($"'{name}' expects {paramTypes.Length} argument(s), got {args.Length}");
 
@@ -471,8 +474,8 @@ public class Generator {
 							$"'{name}' argument {i + 1}: expected '{paramTypes[i]}', got '{argType}'");
 				}
 
-				il.Emit(OpCodes.Call, function.method);
-				return function.returnType;
+				il.Emit(OpCodes.Call, method);
+				return returnType;
 			}
 			case Expression.Block(var body, var tail): {
 				scopes.Push(new Scope());
@@ -481,6 +484,32 @@ public class Generator {
 				var returnType = tail != null ? BuildExpression(tail) : ExpressionType.Unit;
 				scopes.Pop();
 				return returnType;
+			}
+			case Expression.StructInit(var name, var fieldExpressions): {
+				var symbol = Resolve(name);
+				if (symbol is null)
+					throw new CompileException($"Use of undefined struct type '{name}'");
+				if (symbol is not Symbol.StructType(var structType))
+					throw new CompileException($"'{name}' is not a struct type");
+
+				var local = il.DeclareLocal(structType.clrType);
+				il.Emit(OpCodes.Ldloca, local);
+				il.Emit(OpCodes.Initobj, structType.clrType);
+
+				foreach (var (fieldName, fieldExpr) in fieldExpressions) {
+					if (!structType.fields.TryGetValue(fieldName, out var expectedType))
+						throw new CompileException($"Struct '{name}' has no field '{fieldName}'");
+
+					il.Emit(OpCodes.Ldloca, local);
+					var actualType = BuildExpression(fieldExpr);  // ..., local_adress, expression_result
+					if (actualType != expectedType)
+						throw new CompileException(
+							$"Field '{fieldName}': expected '{expectedType}', got '{actualType}'");
+					il.Emit(OpCodes.Stfld, structType.clrType.GetField(fieldName)!);
+				}
+
+				il.Emit(OpCodes.Ldloc, local);
+				return structType;
 			}
 			default:
 				throw new CompileException($"Expression not supported: {expression}");

@@ -72,6 +72,8 @@ public abstract record Expression {
 
 	public record FunctionCall(string name, Expression[] args) : Expression;
 
+	public record StructInit(string name, (string, Expression)[] fields) : Expression;
+
 	public sealed override string ToString() {
 		return this switch {
 			StringLiteral(var v) => $"\"{v}\"",
@@ -84,6 +86,7 @@ public abstract record Expression {
 				"Block {\n" + string.Join("\n", body.Select(s => "\t" + s)) +
 				(tail != null ? "\n\t" + tail : "") + "\n}",
 			FunctionCall(var n, var args) => $"{n}({string.Join(", ", args.Select(a => a.ToString()))})",
+			StructInit(var n, var fields) => $"{n} {{ {string.Join(", ", fields.Select(f => $"{f.Item1} = {f.Item2}"))} }}",
 			_ => throw new UnreachableException()
 		};
 	}
@@ -114,6 +117,18 @@ public static class Parser {
 		from _r in Token(new Token.RBrace())
 		select new Expression.Block(stmts.ToArray(), tail.GetValueOrDefault());
 
+	private static readonly Parser<Token, Expression> StructInit =
+		from name in IdentifierName
+		from _lbrace in Token(new Token.LBrace())
+		from fields in CommaSeparated(
+			from name in IdentifierName
+			from _colon in Token(new Token.Colon())
+			from expr in Expression
+			select (name, expr)
+		)
+		from _rbrace in Token(new Token.RBrace())
+		select (Expression)new Expression.StructInit(name, fields.ToArray());
+
 	// Atoms: literals, identifiers, parenthesized expressions, blocks
 	private static readonly Parser<Token, Expression> Atom =
 		(from t in Token(t => t is Token.Int)
@@ -122,6 +137,7 @@ public static class Parser {
 			select (Expression)new Expression.BoolLiteral(((Token.Bool)t).value))
 		.Or(from s in String
 			select (Expression)new Expression.StringLiteral(s))
+		.Or(Try(StructInit))
 		.Or(Try(
 			from n in IdentifierName
 			from args in CallArgs
