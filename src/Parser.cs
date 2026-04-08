@@ -14,6 +14,8 @@ public abstract record Statement {
 
 	public record VariableBinding(string name, Expression expr) : Statement;
 
+	public record Assignment(string name, Expression expr) : Statement;
+
 	public record FunctionDeclaration(
 		string name,
 		(string, string)[] parameters,
@@ -27,6 +29,7 @@ public abstract record Statement {
 			IntrinsicCall(var name, var args) => $"Intrinsic({name}, {string.Join(", ", args)})",
 			ExpressionStatement(var expr) => $"Expr({expr})",
 			VariableBinding(var name, var expr) => $"Binding({name}, {expr})",
+			Assignment(var name, var expr) => $"Assign({name}, {expr})",
 			FunctionDeclaration(var name, var parameters, var body, var returnType) =>
 				$"Fn({name}({string.Join(", ", parameters.Select(p => $"{p.Item1}: {p.Item2}"))}) -> {returnType} {body})",
 			StructDeclaration(var name, var fields) =>
@@ -219,6 +222,12 @@ public static class Parser {
 		from expression in Expression
 		select (Statement)new Statement.VariableBinding(name, expression);
 
+	private static readonly Parser<Token, Statement> Assignment =
+		from name in IdentifierName
+		from _ in Token(new Token.Equal())
+		from expression in Expression
+		select (Statement)new Statement.Assignment(name, expression);
+
 	private static readonly Parser<Token, (string, string)> TypedIdentifier =
 		from param_name in IdentifierName
 		from _colon in Token(new Token.Colon())
@@ -249,7 +258,7 @@ public static class Parser {
 		select (Statement)new Statement.StructDeclaration(name, fields.ToArray());
 
 	private static readonly Parser<Token, Statement> Statement =
-		Try(from statement in OneOf(IntrinsicCall, ExpressionStatement, VariableBinding)
+		Try(from statement in OneOf(IntrinsicCall, Try(Assignment), VariableBinding, ExpressionStatement)
 				from _ in Token(new Token.Semicolon())
 				select statement)
 			.Or(OneOf(FunctionDecl, StructDecl))

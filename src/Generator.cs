@@ -62,6 +62,7 @@ internal abstract record Symbol {
 
 internal class Scope {
 	private readonly Dictionary<string, Symbol> symbols = new();
+	public bool IsFunctionBoundary { get; init; }
 
 	public Symbol? Get(string name) =>
 		symbols.TryGetValue(name, out var s) ? s : null;
@@ -181,6 +182,7 @@ public class Generator {
 					break;
 			}
 		}
+
 		return;
 
 		void FinalizeStruct(string name) {
@@ -292,11 +294,12 @@ public class Generator {
 				currentMethod = fn.method;
 				nameStack.Push(mangledName);
 
-				scopes.Push(new Scope());
+				scopes.Push(new Scope { IsFunctionBoundary = true });
 				for (var i = 0; i < parameters.Length; i++) {
 					var (pName, pType) = parameters[i];
 					scopes.Peek().Define(pName, new Symbol.Parameter(i, ParseType(pType)));
 				}
+
 				PreDefineSymbols(body.body);
 
 				var fnIl = currentMethod.GetILGenerator();
@@ -309,6 +312,27 @@ public class Generator {
 				scopes.Pop();
 				nameStack.Pop();
 				currentMethod = savedMethod;
+				break;
+			}
+			case Statement.Assignment(var name, var expression): {
+				var type = BuildExpression(expression);
+				var symbol = Resolve(name);
+
+				if (symbol is null)
+					throw new CompileException($"Use of undeclared identifier '{name}'");
+
+				if (symbol is not Symbol.Variable var)
+					throw new CompileException($"Cannot assign to '{name}'. Must be a variable.");
+
+				if (var.type != type)
+					throw new CompileException(
+						$"Type mismatch. Can't assign value of type '{type}' to variable of type '{var.type}'");
+
+				Debug.Assert(type == ExpressionType.Unit || var.local != null);
+				if (type != ExpressionType.Unit) {
+					il.Emit(OpCodes.Stloc, var.local);
+				}
+
 				break;
 			}
 			case Statement.StructDeclaration(var name, _): {
@@ -464,11 +488,17 @@ public class Generator {
 	}
 
 	private Symbol? Resolve(string name) {
+		var crossedBoundary = false;
 		foreach (var scope in scopes) {
 			var symbol = scope.Get(name);
-			if (symbol != null) return symbol;
+			if (symbol != null) {
+				if (crossedBoundary && symbol is Symbol.Variable or Symbol.Parameter)
+					return null;
+				return symbol;
+			}
+			if (scope.IsFunctionBoundary)
+				crossedBoundary = true;
 		}
-
 		return null;
 	}
 

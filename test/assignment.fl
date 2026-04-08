@@ -1,0 +1,19 @@
+let x = 10;
+x = 20;
+:assert(x == 20);
+
+let counter = 0;
+counter = counter + 1;
+counter = counter + 1;
+:assert(counter == 2);
+
+let flag = false;
+flag = true;
+:assert(flag);
+
+fn increment(n: int): int {
+    let result = n;
+    result = result + 1;
+    result
+}
+:assert(increment(5) == 6);
