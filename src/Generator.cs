@@ -15,23 +15,35 @@ public class FlukeProgram(Type programType) {
 	}
 }
 
-public enum ExpressionType {
-	Int,
-	String,
-	Bool,
-	Unit,
-}
+internal abstract record ExpressionType {
+	private record IntType : ExpressionType;
+	private record BoolType : ExpressionType;
+	private record StringType : ExpressionType;
+	private record UnitType : ExpressionType;
+	public record Struct(Type clrType) : ExpressionType;
 
-static class ExpressionTypeExt {
-	public static Type AsType(this ExpressionType type) {
-		return type switch {
-			ExpressionType.Int => typeof(int),
-			ExpressionType.String => typeof(string),
-			ExpressionType.Unit => typeof(void),
-			ExpressionType.Bool => typeof(bool),
-			_ => throw new UnreachableException(),
-		};
-	}
+	public static readonly ExpressionType Int = new IntType();
+	public static readonly ExpressionType Bool = new BoolType();
+	public static readonly ExpressionType String = new StringType();
+	public static readonly ExpressionType Unit = new UnitType();
+
+	public sealed override string ToString() => this switch {
+		IntType => "int",
+		BoolType => "bool",
+		StringType => "string",
+		UnitType => "unit",
+		Struct(var t) => t.Name,
+		_ => throw new UnreachableException(),
+	};
+
+	public Type AsType() => this switch {
+		IntType => typeof(int),
+		BoolType => typeof(bool),
+		StringType => typeof(string),
+		UnitType => typeof(void),
+		Struct(var t) => t,
+		_ => throw new UnreachableException(),
+	};
 }
 
 internal abstract record Symbol {
@@ -40,6 +52,8 @@ internal abstract record Symbol {
 	public record Parameter(int index, ExpressionType type) : Symbol;
 
 	public record Function(MethodBuilder method, ExpressionType returnType, ExpressionType[] parameterTypes) : Symbol;
+
+	public record StructType(ExpressionType type) : Symbol;
 }
 
 internal class Scope {
@@ -59,6 +73,7 @@ public class Generator {
 	private MethodBuilder currentMethod;
 	private readonly Stack<Scope> scopes = new();
 	private readonly Dictionary<string, Symbol.Function> functions = new();
+	private readonly Dictionary<string, ExpressionType.Struct> structTypes = new();
 	private readonly Stack<string> nameStack = new();
 
 	public FlukeProgram GenerateInMemory(Ast ast) {
@@ -100,8 +115,8 @@ public class Generator {
 
 		scopes.Push(new Scope());
 
-		// Pass 1: register all function signatures (recursive)
-		CollectFunctions(ast.Statements, type, "");
+		// Pass 1: register all function and struct signatures (recursive)
+		CollectSymbols(ast.Statements, type, "", mod);
 
 		// Pass 2: generate code
 		var il = currentMethod.GetILGenerator();
@@ -114,7 +129,7 @@ public class Generator {
 		return type.CreateType();
 	}
 
-	private void CollectFunctions(IEnumerable<Statement> statements, TypeBuilder type, string prefix) {
+	private void CollectSymbols(IEnumerable<Statement> statements, TypeBuilder type, string prefix, ModuleBuilder mod) {
 		foreach (var stmt in statements) {
 			switch (stmt) {
 				case Statement.FunctionDeclaration decl: {
@@ -126,14 +141,26 @@ public class Generator {
 						returnType.AsType(), paramTypes);
 					var parameterTypes = decl.parameters.Select(p => ParseType(p.Item2)).ToArray();
 					functions[mangledName] = new Symbol.Function(mb, returnType, parameterTypes);
-					CollectFunctions(decl.body.body, type, mangledName);
+					CollectSymbols(decl.body.body, type, mangledName, mod);
+					break;
+				}
+				case Statement.StructDeclaration(var name, var fields): {
+					var structBuilder = mod.DefineType(name,
+						TypeAttributes.Public | TypeAttributes.Sealed | TypeAttributes.SequentialLayout,
+						typeof(ValueType));
+					foreach (var (fieldName, fieldTypeName) in fields)
+						structBuilder.DefineField(fieldName, ParseType(fieldTypeName).AsType(), FieldAttributes.Public);
+					var createdType = structBuilder.CreateType();
+					var exprType = new ExpressionType.Struct(createdType);
+					structTypes[name] = exprType;
+					scopes.Peek().Define(name, new Symbol.StructType(exprType));
 					break;
 				}
 				case Statement.ExpressionStatement(Expression.Block(var body, _)):
-					CollectFunctions(body, type, prefix);
+					CollectSymbols(body, type, prefix, mod);
 					break;
 				case Statement.VariableBinding(_, Expression.Block(var body, _)):
-					CollectFunctions(body, type, prefix);
+					CollectSymbols(body, type, prefix, mod);
 					break;
 			}
 		}
@@ -143,12 +170,13 @@ public class Generator {
 		return nameStack.Count == 0 ? name : nameStack.Peek() + "$" + name;
 	}
 
-	private static ExpressionType ParseType(string name) => name switch {
+	private ExpressionType ParseType(string name) => name switch {
 		"int" => ExpressionType.Int,
 		"bool" => ExpressionType.Bool,
 		"string" => ExpressionType.String,
 		"unit" => ExpressionType.Unit,
-		_ => throw new CompileException($"Unknown type '{name}'")
+		_ => structTypes.TryGetValue(name, out var st) ? st
+		     : throw new CompileException($"Unknown type '{name}'")
 	};
 
 	private void BuildStatement(Statement statement) {
@@ -221,6 +249,9 @@ public class Generator {
 				scopes.Pop();
 				nameStack.Pop();
 				currentMethod = savedMethod;
+				break;
+			}
+			case Statement.StructDeclaration: {
 				break;
 			}
 			case Statement.ExpressionStatement(var expr): {

@@ -148,7 +148,7 @@ public static class Lexer {
 		select (Token)new Token.Bool(bool.Parse(value));
 
 	private static readonly Parser<char, Token> Keyword =
-		from name in Letter.ManyString().Where(name => name is "let" or "fn")
+		from name in Letter.ManyString().Where(name => name is "let" or "fn" or "struct")
 		select (Token)new Token.Keyword(name);
 
 	private static readonly Parser<char, Token> Identifier =

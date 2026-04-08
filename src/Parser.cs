@@ -20,13 +20,17 @@ public abstract record Statement {
 		Expression.Block body,
 		string returnType) : Statement;
 
-	public override string ToString() {
+	public record StructDeclaration(string name, (string, string)[] fields) : Statement;
+
+	public sealed override string ToString() {
 		return this switch {
 			IntrinsicCall(var name, var args) => $"Intrinsic({name}, {string.Join(", ", args)})",
 			ExpressionStatement(var expr) => $"Expr({expr})",
 			VariableBinding(var name, var expr) => $"Binding({name}, {expr})",
 			FunctionDeclaration(var name, var parameters, var body, var returnType) =>
 				$"Fn({name}({string.Join(", ", parameters.Select(p => $"{p.Item1}: {p.Item2}"))}) -> {returnType} {body})",
+			StructDeclaration(var name, var fields) =>
+				$"Struct({name} {{ {string.Join(", ", fields.Select(f => $"{f.Item1}: {f.Item2}"))} }})",
 			_ => throw new UnreachableException()
 		};
 	}
@@ -83,6 +87,16 @@ public abstract record Expression {
 }
 
 public static class Parser {
+	// Parses zero or more comma-separated items, allowing an optional trailing comma.
+	private static Parser<Token, IEnumerable<T>> CommaSeparated<T>(Parser<Token, T> p) =>
+		from items in Try(
+			from item in p
+			from _ in Token(new Token.Comma())
+			select item
+		).Many()
+		from last in p.Optional()
+		select last.HasValue ? items.Append(last.Value) : items;
+
 	private static readonly Parser<Token, string> String =
 		from token in Token(t => t is Token.String)
 		select ((Token.String)token).value;
@@ -184,8 +198,7 @@ public static class Parser {
 
 	private static readonly Parser<Token, IEnumerable<Expression>> CallArgs =
 		from _lparen in Token(new Token.LParen())
-		from args in Expression.Separated(Token(new Token.Comma()))
-		from _ in Token(new Token.Comma()).Optional()
+		from args in CommaSeparated(Expression)
 		from _rparen in Token(new Token.RParen())
 		select args;
 
@@ -216,8 +229,7 @@ public static class Parser {
 		from _fn in Token(new Token.Keyword("fn"))
 		from name in IdentifierName
 		from _lparen in Token(new Token.LParen())
-		from parameters in TypedIdentifier.Separated(Token(new Token.Comma()))
-		from _ in Token(new Token.Comma()).Optional()
+		from parameters in CommaSeparated(TypedIdentifier)
 		from _rparen in Token(new Token.RParen())
 		from returnType in Try(
 				from _colon in Token(new Token.Colon())
@@ -228,11 +240,19 @@ public static class Parser {
 		select (Statement)new Statement.FunctionDeclaration(name, parameters.ToArray(), body,
 			returnType.GetValueOrDefault("unit"));
 
+	private static readonly Parser<Token, Statement> StructDecl =
+		from _struct in Token(new Token.Keyword("struct"))
+		from name in IdentifierName
+		from _lbrace in Token(new Token.LBrace())
+		from fields in CommaSeparated(TypedIdentifier)
+		from _rbrace in Token(new Token.RBrace())
+		select (Statement)new Statement.StructDeclaration(name, fields.ToArray());
+
 	private static readonly Parser<Token, Statement> Statement =
 		Try(from statement in OneOf(IntrinsicCall, ExpressionStatement, VariableBinding)
 				from _ in Token(new Token.Semicolon())
 				select statement)
-			.Or(FunctionDecl)
+			.Or(OneOf(FunctionDecl, StructDecl))
 			.Or(Try(
 				from block in Block
 				from _ in Not(Token(new Token.RBrace()))
