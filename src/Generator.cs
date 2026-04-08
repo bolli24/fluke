@@ -17,9 +17,13 @@ public class FlukeProgram(Type programType) {
 
 internal abstract record ExpressionType {
 	private record IntType : ExpressionType;
+
 	private record BoolType : ExpressionType;
+
 	private record StringType : ExpressionType;
+
 	private record UnitType : ExpressionType;
+
 	public record Struct(Type clrType) : ExpressionType;
 
 	public static readonly ExpressionType Int = new IntType();
@@ -117,6 +121,7 @@ public class Generator {
 
 		// Pass 1: register all function and struct signatures (recursive)
 		CollectSymbols(ast.Statements, type, "", mod);
+		PreDefineSymbols(ast.Statements);
 
 		// Pass 2: generate code
 		var il = currentMethod.GetILGenerator();
@@ -130,7 +135,29 @@ public class Generator {
 	}
 
 	private void CollectSymbols(IEnumerable<Statement> statements, TypeBuilder type, string prefix, ModuleBuilder mod) {
-		foreach (var stmt in statements) {
+		var stmtList = statements.ToList();
+
+		// Sub-pass 1: register all struct TypeBuilders so names resolve for forward references
+		var pendingStructs = new Dictionary<string, (TypeBuilder builder, (string name, string type)[] fields)>();
+		foreach (var stmt in stmtList) {
+			if (stmt is not Statement.StructDeclaration(var sName, var sFields)) continue;
+			var sb = mod.DefineType(sName,
+				TypeAttributes.Public | TypeAttributes.Sealed | TypeAttributes.SequentialLayout,
+				typeof(ValueType));
+			structTypes[sName] = new ExpressionType.Struct(sb);
+			pendingStructs[sName] = (sb, sFields.Select(f => (f.Item1, f.Item2)).ToArray());
+		}
+
+		// Sub-pass 2: define fields and finalize in dependency order
+		var finalized = new HashSet<string>();
+		var visitingSet = new HashSet<string>();
+		var visitingPath = new List<string>();
+
+		foreach (var name in pendingStructs.Keys)
+			FinalizeStruct(name);
+
+		// Main pass: register functions and recurse into blocks
+		foreach (var stmt in stmtList) {
 			switch (stmt) {
 				case Statement.FunctionDeclaration decl: {
 					var mangledName = prefix == "" ? decl.name : prefix + "$" + decl.name;
@@ -144,18 +171,8 @@ public class Generator {
 					CollectSymbols(decl.body.body, type, mangledName, mod);
 					break;
 				}
-				case Statement.StructDeclaration(var name, var fields): {
-					var structBuilder = mod.DefineType(name,
-						TypeAttributes.Public | TypeAttributes.Sealed | TypeAttributes.SequentialLayout,
-						typeof(ValueType));
-					foreach (var (fieldName, fieldTypeName) in fields)
-						structBuilder.DefineField(fieldName, ParseType(fieldTypeName).AsType(), FieldAttributes.Public);
-					var createdType = structBuilder.CreateType();
-					var exprType = new ExpressionType.Struct(createdType);
-					structTypes[name] = exprType;
-					scopes.Peek().Define(name, new Symbol.StructType(exprType));
-					break;
-				}
+				case Statement.StructDeclaration:
+					break; // handled in sub-passes above
 				case Statement.ExpressionStatement(Expression.Block(var body, _)):
 					CollectSymbols(body, type, prefix, mod);
 					break;
@@ -164,10 +181,50 @@ public class Generator {
 					break;
 			}
 		}
+		return;
+
+		void FinalizeStruct(string name) {
+			if (finalized.Contains(name)) return;
+			if (!visitingSet.Add(name)) {
+				var cycleStart = visitingPath.IndexOf(name);
+				var cycle = visitingPath.Skip(cycleStart).Append(name);
+				throw new CompileException($"Cyclic struct dependency: {string.Join(" -> ", cycle)}");
+			}
+
+			visitingPath.Add(name);
+			var (sb, fields) = pendingStructs[name];
+			foreach (var (_, fieldTypeName) in fields)
+				if (pendingStructs.ContainsKey(fieldTypeName))
+					FinalizeStruct(fieldTypeName);
+			foreach (var (fieldName, fieldTypeName) in fields)
+				sb.DefineField(fieldName, ParseType(fieldTypeName).AsType(), FieldAttributes.Public);
+			var createdType = sb.CreateType();
+			structTypes[name] = new ExpressionType.Struct(createdType);
+			visitingPath.RemoveAt(visitingPath.Count - 1);
+			visitingSet.Remove(name);
+			finalized.Add(name);
+		}
 	}
 
 	private string MangledName(string name) {
 		return nameStack.Count == 0 ? name : nameStack.Peek() + "$" + name;
+	}
+
+	// Pre-populate the current scope with all functions and structs declared directly in
+	// `statements` so that forward references within the same body work.
+	private void PreDefineSymbols(IEnumerable<Statement> statements) {
+		foreach (var stmt in statements) {
+			switch (stmt) {
+				case Statement.FunctionDeclaration(var name, _, _, _):
+					if (functions.TryGetValue(MangledName(name), out var fn))
+						scopes.Peek().Define(name, fn);
+					break;
+				case Statement.StructDeclaration(var name, _):
+					if (structTypes.TryGetValue(name, out var st))
+						scopes.Peek().Define(name, new Symbol.StructType(st));
+					break;
+			}
+		}
 	}
 
 	private ExpressionType ParseType(string name) => name switch {
@@ -175,8 +232,9 @@ public class Generator {
 		"bool" => ExpressionType.Bool,
 		"string" => ExpressionType.String,
 		"unit" => ExpressionType.Unit,
-		_ => structTypes.TryGetValue(name, out var st) ? st
-		     : throw new CompileException($"Unknown type '{name}'")
+		_ => structTypes.TryGetValue(name, out var st)
+			? st
+			: throw new CompileException($"Unknown type '{name}'")
 	};
 
 	private void BuildStatement(Statement statement) {
@@ -192,7 +250,8 @@ public class Generator {
 				break;
 			}
 			case Statement.IntrinsicCall("print", var args): {
-				throw new CompileException($"Too many arguments: {args.Length}. Intrinsic 'print' requires 0 or 1 arguments.");
+				throw new CompileException(
+					$"Too many arguments: {args.Length}. Intrinsic 'print' requires 0 or 1 arguments.");
 			}
 			case Statement.IntrinsicCall("assert", [var arg]): {
 				var type = BuildExpression(arg);
@@ -238,6 +297,7 @@ public class Generator {
 					var (pName, pType) = parameters[i];
 					scopes.Peek().Define(pName, new Symbol.Parameter(i, ParseType(pType)));
 				}
+				PreDefineSymbols(body.body);
 
 				var fnIl = currentMethod.GetILGenerator();
 				foreach (var stmt in body.body)
@@ -251,7 +311,8 @@ public class Generator {
 				currentMethod = savedMethod;
 				break;
 			}
-			case Statement.StructDeclaration: {
+			case Statement.StructDeclaration(var name, _): {
+				Define(name, new Symbol.StructType(structTypes[name]));
 				break;
 			}
 			case Statement.ExpressionStatement(var expr): {
@@ -382,8 +443,10 @@ public class Generator {
 				for (var i = 0; i < args.Length; i++) {
 					var argType = BuildExpression(args[i]);
 					if (argType != paramTypes[i])
-						throw new CompileException($"'{name}' argument {i + 1}: expected '{paramTypes[i]}', got '{argType}'");
+						throw new CompileException(
+							$"'{name}' argument {i + 1}: expected '{paramTypes[i]}', got '{argType}'");
 				}
+
 				il.Emit(OpCodes.Call, function.method);
 				return function.returnType;
 			}

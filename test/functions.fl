@@ -27,9 +27,22 @@ fn block_scoped(): unit {
     };
 }
 
+fn order(): unit {
+    {
+    	{
+			later();
+    	}
+    }
+    
+	fn later(): unit {
+		:print("later");
+	}
+}
+
 :assert(add(1, 2) == 3);
 :assert(add(10, add(3, 4)) == 17);
 :assert(always_true());
 no_op();
 outer();
 block_scoped();
+order();

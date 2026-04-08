@@ -8,5 +8,14 @@ struct Unit {}
 struct Person {
     age: int,
     active: bool,
-    pos: Point
+    pos: Point,
+}
+
+struct Node {
+    value: int,
+    next: Leaf,
+}
+
+struct Leaf {
+    value: int,
 }
