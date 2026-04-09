@@ -32,3 +32,41 @@ let u = Unit {};
 let leaf = Leaf { value: 5 };
 let node = Node { value: 1, next: Leaf { value: 2 } };
 let person = Person { age: 30, active: true, pos: Point { x: 3, y: 4 } };
+
+let px = p.x;
+let py = p.y;
+let r = black.r;
+let age = person.age;
+let nested_x = person.pos.x;
+let node_val = node.value;
+let next_val = node.next.value;
+
+:assert(px == 1);
+:assert(p.y == 2);
+:assert(r == 0);
+:assert(age == 30);
+:assert(person.active);
+:assert(nested_x == 3);
+:assert(node_val == 1);
+:assert(node.next.value == 2);
+:assert(next_val == 2);
+
+let q = Point { x: 10, y: 20 };
+q.x = 99;
+:assert(q.x == 99);
+:assert(q.y == 20);
+
+let c = Color { r: 1, g: 2, b: 3 };
+c.b = 255;
+:assert(c.r == 1);
+:assert(c.b == 255);
+
+let pp = Person { age: 25, active: false, pos: Point { x: 0, y: 0 } };
+pp.pos.x = 7;
+pp.pos.y = 8;
+:assert(pp.pos.x == 7);
+:assert(pp.pos.y == 8);
+:assert(pp.age == 25);
+
+q.x = 42;
+:assert(q.x == 42);

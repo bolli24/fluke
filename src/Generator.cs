@@ -204,6 +204,7 @@ public class Generator {
 				sb.DefineField(fieldName, fieldType.AsType(), FieldAttributes.Public);
 				fieldTypes[fieldName] = fieldType;
 			}
+
 			var createdType = sb.CreateType();
 			structTypes[name] = new ExpressionType.Struct(createdType, fieldTypes);
 			visitingPath.RemoveAt(visitingPath.Count - 1);
@@ -318,23 +319,44 @@ public class Generator {
 				currentMethod = savedMethod;
 				break;
 			}
-			case Statement.Assignment(var name, var expression): {
-				var type = BuildExpression(expression);
-				var symbol = Resolve(name);
+			case Statement.Assignment(var left, var expression): {
+				if (left is Expression.Identifier(var name)) {
+					var type = BuildExpression(expression);
+					var symbol = Resolve(name);
 
-				if (symbol is null)
-					throw new CompileException($"Use of undeclared identifier '{name}'");
+					if (symbol is null)
+						throw new CompileException($"Use of undeclared identifier '{name}'");
 
-				if (symbol is not Symbol.Variable var)
-					throw new CompileException($"Cannot assign to '{name}'. Must be a variable.");
+					if (symbol is not Symbol.Variable var)
+						throw new CompileException($"Cannot assign to '{name}'. Must be a variable.");
 
-				if (var.type != type)
-					throw new CompileException(
-						$"Type mismatch. Can't assign value of type '{type}' to variable of type '{var.type}'");
+					if (var.type != type)
+						throw new CompileException(
+							$"Type mismatch. Can't assign value of type '{type}' to variable of type '{var.type}'");
 
-				Debug.Assert(type == ExpressionType.Unit || var.local != null);
-				if (type != ExpressionType.Unit) {
-					il.Emit(OpCodes.Stloc, var.local);
+					Debug.Assert(type == ExpressionType.Unit || var.local != null);
+					if (type != ExpressionType.Unit)
+						il.Emit(OpCodes.Stloc, var.local);
+				}
+				else if (left is Expression.FieldAccess(var container, var field)) {
+					var containerType = EmitAddressOf(container);
+
+					if (containerType is not ExpressionType.Struct structType)
+						throw new CompileException(
+							$"Cannot access field '{field}' on non-struct type '{containerType}'");
+
+					if (!structType.fields.TryGetValue(field, out var targetType))
+						throw new CompileException($"No field named '{field}' on type '{structType}'");
+
+					var valueType = BuildExpression(expression);
+					if (valueType != targetType)
+						throw new CompileException(
+							$"Type mismatch. Can't assign value of type '{valueType}' to field '{field}' of type '{targetType}'");
+
+					il.Emit(OpCodes.Stfld, structType.clrType.GetField(field)!);
+				}
+				else {
+					throw new CompileException($"Invalid assignment target: {left}");
 				}
 
 				break;
@@ -501,7 +523,7 @@ public class Generator {
 						throw new CompileException($"Struct '{name}' has no field '{fieldName}'");
 
 					il.Emit(OpCodes.Ldloca, local);
-					var actualType = BuildExpression(fieldExpr);  // ..., local_adress, expression_result
+					var actualType = BuildExpression(fieldExpr); // ..., local_adress, expression_result
 					if (actualType != expectedType)
 						throw new CompileException(
 							$"Field '{fieldName}': expected '{expectedType}', got '{actualType}'");
@@ -511,8 +533,45 @@ public class Generator {
 				il.Emit(OpCodes.Ldloc, local);
 				return structType;
 			}
+			case Expression.FieldAccess(var expr, var name): {
+				var type = BuildExpression(expr);
+
+				if (type is not ExpressionType.Struct structType)
+					throw new CompileException($"Can't access field on type '{type}'");
+
+				if (!structType.fields.TryGetValue(name, out var fieldType))
+					throw new CompileException($"No field named '{name}' on type '{type}'");
+
+				il.Emit(OpCodes.Ldfld, structType.clrType.GetField(name)!);
+
+				return fieldType;
+			}
 			default:
 				throw new CompileException($"Expression not supported: {expression}");
+		}
+	}
+
+	private ExpressionType EmitAddressOf(Expression expr) {
+		var il = currentMethod.GetILGenerator();
+		switch (expr) {
+			case Expression.Identifier(var name): {
+				var symbol = Resolve(name);
+				if (symbol is not Symbol.Variable var)
+					throw new CompileException($"Cannot take address of '{name}'");
+				il.Emit(OpCodes.Ldloca, var.local!);
+				return var.type;
+			}
+			case Expression.FieldAccess(var inner, var field): {
+				var type = EmitAddressOf(inner);
+				if (type is not ExpressionType.Struct structType)
+					throw new CompileException($"Cannot access field '{field}' on non-struct type '{type}'");
+				if (!structType.fields.TryGetValue(field, out var fieldType))
+					throw new CompileException($"No field named '{field}' on type '{structType}'");
+				il.Emit(OpCodes.Ldflda, structType.clrType.GetField(field)!);
+				return fieldType;
+			}
+			default:
+				throw new CompileException($"Invalid assignment target: {expr}");
 		}
 	}
 
@@ -525,9 +584,11 @@ public class Generator {
 					return null;
 				return symbol;
 			}
+
 			if (scope.IsFunctionBoundary)
 				crossedBoundary = true;
 		}
+
 		return null;
 	}
 

@@ -14,7 +14,7 @@ public abstract record Statement {
 
 	public record VariableBinding(string name, Expression expr) : Statement;
 
-	public record Assignment(string name, Expression expr) : Statement;
+	public record Assignment(Expression lhs, Expression rhs) : Statement;
 
 	public record FunctionDeclaration(
 		string name,
@@ -29,7 +29,7 @@ public abstract record Statement {
 			IntrinsicCall(var name, var args) => $"Intrinsic({name}, {string.Join(", ", args)})",
 			ExpressionStatement(var expr) => $"Expr({expr})",
 			VariableBinding(var name, var expr) => $"Binding({name}, {expr})",
-			Assignment(var name, var expr) => $"Assign({name}, {expr})",
+			Assignment(var lhs, var rhs) => $"Assign({lhs}, {rhs})",
 			FunctionDeclaration(var name, var parameters, var body, var returnType) =>
 				$"Fn({name}({string.Join(", ", parameters.Select(p => $"{p.Item1}: {p.Item2}"))}) -> {returnType} {body})",
 			StructDeclaration(var name, var fields) =>
@@ -74,6 +74,8 @@ public abstract record Expression {
 
 	public record StructInit(string name, (string, Expression)[] fields) : Expression;
 
+	public record FieldAccess(Expression expression, string name) : Expression;
+
 	public sealed override string ToString() {
 		return this switch {
 			StringLiteral(var v) => $"\"{v}\"",
@@ -86,7 +88,9 @@ public abstract record Expression {
 				"Block {\n" + string.Join("\n", body.Select(s => "\t" + s)) +
 				(tail != null ? "\n\t" + tail : "") + "\n}",
 			FunctionCall(var n, var args) => $"{n}({string.Join(", ", args.Select(a => a.ToString()))})",
-			StructInit(var n, var fields) => $"{n} {{ {string.Join(", ", fields.Select(f => $"{f.Item1} = {f.Item2}"))} }}",
+			StructInit(var n, var fields) =>
+				$"{n} {{ {string.Join(", ", fields.Select(f => $"{f.Item1} = {f.Item2}"))} }}",
+			FieldAccess(var expr, var name) => $"Field({expr}, {name})",
 			_ => throw new UnreachableException()
 		};
 	}
@@ -150,6 +154,15 @@ public static class Parser {
 			select e)
 		.Or(from block in Block select (Expression)block);
 
+	private static readonly Parser<Token, Expression> FieldAccess =
+		from expr in Atom
+		from accesses in (
+			from _dot in Token(new Token.Dot())
+			from name in IdentifierName
+			select name
+		).Many()
+		select accesses.Aggregate(expr, (e, name) => (Expression)new Expression.FieldAccess(e, name));
+
 	// Unary: -x, !x
 	private static readonly Parser<Token, Expression> Unary =
 		(from _ in Token(new Token.Minus())
@@ -158,7 +171,7 @@ public static class Parser {
 		.Or(from _ in Token(new Token.Bang())
 			from e in Rec(() => Unary)
 			select (Expression)new Expression.UnaryOp(UnOp.Not, e))
-		.Or(Atom);
+		.Or(FieldAccess);
 
 	// Multiplicative: *, /
 	private static readonly Parser<Token, Expression> Multiplicative =
@@ -239,10 +252,10 @@ public static class Parser {
 		select (Statement)new Statement.VariableBinding(name, expression);
 
 	private static readonly Parser<Token, Statement> Assignment =
-		from name in IdentifierName
+		from lhs in FieldAccess
 		from _ in Token(new Token.Equal())
-		from expression in Expression
-		select (Statement)new Statement.Assignment(name, expression);
+		from rhs in Expression
+		select (Statement)new Statement.Assignment(lhs, rhs);
 
 	private static readonly Parser<Token, (string, string)> TypedIdentifier =
 		from param_name in IdentifierName

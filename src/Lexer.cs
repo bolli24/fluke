@@ -8,6 +8,8 @@ using static Pidgin.Parser<char>;
 namespace fluke;
 
 public abstract record Token {
+	public record Dot : Token;
+
 	public record Colon : Token;
 
 	public record Semicolon : Token;
@@ -17,7 +19,7 @@ public abstract record Token {
 	public record LParen : Token;
 
 	public record RParen : Token;
-	
+
 	public record LBrace : Token;
 
 	public record RBrace : Token;
@@ -52,6 +54,7 @@ public abstract record Token {
 
 	public sealed override string ToString() {
 		return this switch {
+			Dot => "Dot",
 			Colon => "Colon",
 			Semicolon => "Semicolon",
 			Comma => "Comma",
@@ -82,12 +85,15 @@ public abstract record Token {
 }
 
 public static class Lexer {
+	private static readonly Parser<char, Token> Dot =
+		Char('.').ThenReturn((Token)new Token.Dot());
+
 	private static readonly Parser<char, Token> Colon =
 		Char(':').ThenReturn((Token)new Token.Colon());
 
 	private static readonly Parser<char, Token> Semicolon =
 		Char(';').ThenReturn((Token)new Token.Semicolon());
-	
+
 	private static readonly Parser<char, Token> Comma =
 		Char(',').ThenReturn((Token)new Token.Comma());
 
@@ -96,7 +102,7 @@ public static class Lexer {
 
 	private static readonly Parser<char, Token> RParen =
 		Char(')').ThenReturn((Token)new Token.RParen());
-	
+
 	private static readonly Parser<char, Token> LBrace =
 		Char('{').ThenReturn((Token)new Token.LBrace());
 
@@ -159,7 +165,7 @@ public static class Lexer {
 	private static readonly Parser<char, List<Token>> Tokens =
 		from _leading in Whitespace.SkipMany()
 		from tokens in OneOf(
-			Colon, Semicolon, Comma, LParen, RParen, LBrace, RBrace,
+			Dot, Colon, Semicolon, Comma, LParen, RParen, LBrace, RBrace,
 			Plus, Minus, Star, Slash, Try(BangEqual), Bang, Try(EqualEqual), Equal,
 			Try(PipePipe), Try(AmpAmp),
 			String, Try(IntLiteral), Try(Keyword), Try(BoolLiteral), Identifier
