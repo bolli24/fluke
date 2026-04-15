@@ -151,10 +151,12 @@ public static class Lexer {
 
 	private static readonly Parser<char, Token> BoolLiteral =
 		from value in Letter.ManyString().Where(s => s is "true" or "false")
+		from _ in Not(Lookahead(LetterOrDigit.Or(Char('_'))))
 		select (Token)new Token.Bool(bool.Parse(value));
 
 	private static readonly Parser<char, Token> Keyword =
-		from name in Letter.ManyString().Where(name => name is "let" or "fn" or "struct" or "if" or "then" or "else")
+		from name in Letter.ManyString().Where(name => name is "let" or "fn" or "struct" or "if" or "then" or "else" or "return")
+		from _ in Not(Lookahead(LetterOrDigit.Or(Char('_'))))
 		select (Token)new Token.Keyword(name);
 
 	private static readonly Parser<char, Token> Identifier =

@@ -24,6 +24,8 @@ public abstract record Statement {
 
 	public record StructDeclaration(string name, (string, string)[] fields) : Statement;
 
+	public record Return(Expression? Expression) : Statement;
+
 	public sealed override string ToString() {
 		return this switch {
 			IntrinsicCall(var name, var args) => $"Intrinsic({name}, {string.Join(", ", args)})",
@@ -34,6 +36,7 @@ public abstract record Statement {
 				$"Fn({name}({string.Join(", ", parameters.Select(p => $"{p.Item1}: {p.Item2}"))}) -> {returnType} {body})",
 			StructDeclaration(var name, var fields) =>
 				$"Struct({name} {{ {string.Join(", ", fields.Select(f => $"{f.Item1}: {f.Item2}"))} }})",
+			Return(var expr) => expr != null ? $"Return({expr})" : "Return",
 			_ => throw new UnreachableException()
 		};
 	}
@@ -165,7 +168,7 @@ public static class Parser {
 			from name in IdentifierName
 			select name
 		).Many()
-		select accesses.Aggregate(expr, (e, name) => (Expression)new Expression.FieldAccess(e, name));
+		select accesses.Aggregate(expr, (e, name) => new Expression.FieldAccess(e, name));
 
 	// Unary: -x, !x
 	private static readonly Parser<Token, Expression> Unary =
@@ -261,6 +264,11 @@ public static class Parser {
 		from expr in Expression
 		select (Statement)new Statement.ExpressionStatement(expr);
 
+	private static readonly Parser<Token, Statement> Return =
+		from _return in Token(new Token.Keyword("return"))
+		from expression in Try(Expression).Optional()
+		select (Statement)new Statement.Return(expression.GetValueOrDefault());
+
 	private static readonly Parser<Token, Statement> VariableBinding =
 		from _ in Token(new Token.Keyword("let"))
 		from name in IdentifierName
@@ -304,7 +312,7 @@ public static class Parser {
 		select (Statement)new Statement.StructDeclaration(name, fields.ToArray());
 
 	private static readonly Parser<Token, Statement> Statement =
-		Try(from statement in OneOf(IntrinsicCall, Try(Assignment), VariableBinding, ExpressionStatement)
+		Try(from statement in OneOf(IntrinsicCall, Try(Assignment), VariableBinding, Return, ExpressionStatement)
 				from _ in Token(new Token.Semicolon())
 				select statement)
 			.Or(OneOf(FunctionDecl, StructDecl))

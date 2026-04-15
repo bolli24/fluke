@@ -14,6 +14,7 @@ internal sealed class TestCommand : Command<TestCommand.Settings> {
 		var failed = 0;
 
 		foreach (var file in files) {
+			var expectError = System.IO.Path.GetFileNameWithoutExtension(file).EndsWith("_error");
 			var originalOut = Console.Out;
 			if (!settings.Output) Console.SetOut(TextWriter.Null);
 			try {
@@ -21,8 +22,25 @@ internal sealed class TestCommand : Command<TestCommand.Settings> {
 				var program = new Generator().GenerateInMemory(ast);
 				program.Run();
 				Console.SetOut(originalOut);
-				Console.WriteLine($"PASS {file}");
-				passed++;
+				if (expectError) {
+					Console.WriteLine($"FAIL {file}");
+					Console.WriteLine($"     Expected a compile error but succeeded");
+					failed++;
+				} else {
+					Console.WriteLine($"PASS {file}");
+					passed++;
+				}
+			} catch (CompileException e) {
+				Console.SetOut(originalOut);
+				if (expectError) {
+					Console.WriteLine($"PASS {file}");
+					Console.WriteLine($"     {e.Message}");
+					passed++;
+				} else {
+					Console.WriteLine($"FAIL {file}");
+					Console.WriteLine($"     {e.Message}");
+					failed++;
+				}
 			} catch (Exception e) {
 				Console.SetOut(originalOut);
 				Console.WriteLine($"FAIL {file}");

@@ -80,6 +80,7 @@ internal class Scope {
 
 public class Generator {
 	private MethodBuilder currentMethod;
+	private ExpressionType currentReturnType = ExpressionType.Unit;
 	private readonly Stack<Scope> scopes = new();
 	private readonly Dictionary<string, Symbol.Function> functions = new();
 	private readonly Dictionary<string, ExpressionType.Struct> structTypes = new();
@@ -248,7 +249,7 @@ public class Generator {
 			: throw new CompileException($"Unknown type '{name}'")
 	};
 
-	private void BuildStatement(Statement statement) {
+	private bool BuildStatement(Statement statement) {
 		var il = currentMethod.GetILGenerator();
 		switch (statement) {
 			case Statement.IntrinsicCall("print", []): {
@@ -301,6 +302,8 @@ public class Generator {
 
 				var savedMethod = currentMethod;
 				currentMethod = fn.method;
+				var savedReturnType = currentReturnType;
+				currentReturnType = fn.returnType;
 				nameStack.Push(mangledName);
 
 				scopes.Push(new Scope { IsFunctionBoundary = true });
@@ -312,15 +315,22 @@ public class Generator {
 				PreDefineSymbols(body.body);
 
 				var fnIl = currentMethod.GetILGenerator();
-				foreach (var stmt in body.body)
-					BuildStatement(stmt);
-				if (body.tail != null)
-					BuildExpression(body.tail);
-				fnIl.Emit(OpCodes.Ret);
+				var returned = false;
+				foreach (var stmt in body.body) {
+					if (returned) break;
+					returned = BuildStatement(stmt);
+				}
+
+				if (!returned) {
+					if (body.tail != null)
+						BuildExpression(body.tail);
+					fnIl.Emit(OpCodes.Ret);
+				}
 
 				scopes.Pop();
 				nameStack.Pop();
 				currentMethod = savedMethod;
+				currentReturnType = savedReturnType;
 				break;
 			}
 			case Statement.Assignment(var left, var expression): {
@@ -371,13 +381,21 @@ public class Generator {
 			}
 			case Statement.ExpressionStatement(var expr): {
 				var type = BuildExpression(expr);
-				if (type != ExpressionType.Unit)
+				if (type != ExpressionType.Unit && type != ExpressionType.Never)
 					il.Emit(OpCodes.Pop);
-				break;
+				return type == ExpressionType.Never;
+			}
+			case Statement.Return(var expr): {
+				var type = expr != null ? BuildExpression(expr) : ExpressionType.Unit;
+				if (type != currentReturnType)
+					throw new CompileException($"Return type mismatch: expected '{currentReturnType}', got '{type}'");
+				il.Emit(OpCodes.Ret);
+				return true;
 			}
 			default:
 				throw new CompileException($"Statement not supported: {statement}");
 		}
+		return false;
 	}
 
 	private ExpressionType BuildExpression(Expression expression) {
@@ -505,11 +523,15 @@ public class Generator {
 			}
 			case Expression.Block(var body, var tail): {
 				scopes.Push(new Scope());
-				foreach (var stmt in body)
-					BuildStatement(stmt);
-				var returnType = tail != null ? BuildExpression(tail) : ExpressionType.Unit;
+				var returned = false;
+				foreach (var stmt in body) {
+					if (returned) break;
+					returned = BuildStatement(stmt);
+				}
+
+				var returnType = !returned && tail != null ? BuildExpression(tail) : ExpressionType.Unit;
 				scopes.Pop();
-				return returnType;
+				return returned ? ExpressionType.Never : returnType;
 			}
 			case Expression.StructInit(var name, var fieldExpressions): {
 				var symbol = Resolve(name);
@@ -563,22 +585,29 @@ public class Generator {
 				il.Emit(OpCodes.Brfalse, elseLabel);
 
 				var thenType = BuildExpression(thenBlock);
-				il.Emit(OpCodes.Br, endLabel);
+				if (thenType != ExpressionType.Never)
+					il.Emit(OpCodes.Br, endLabel);
 				il.MarkLabel(elseLabel);
 
+				ExpressionType resultType;
 				if (elseBlock is not null) {
 					var elseType = BuildExpression(elseBlock);
 					if (elseType != thenType && elseType != ExpressionType.Never && thenType != ExpressionType.Never) {
 						throw new CompileException("If and else have incompatible types.");
 					}
+
+					resultType = thenType == ExpressionType.Never ? elseType : thenType;
 				}
-				else if (thenType != ExpressionType.Unit && thenType != ExpressionType.Never) {
-					throw new CompileException(
-						$"Inner expression type of if expression without else arm must be unit. Got '{thenType}'");
+				else {
+					if (thenType != ExpressionType.Unit && thenType != ExpressionType.Never) {
+						throw new CompileException(
+							$"Inner expression type of if expression without else arm must be unit. Got '{thenType}'");
+					}
+					resultType = ExpressionType.Unit;
 				}
-				
+
 				il.MarkLabel(endLabel);
-				return thenType;
+				return resultType;
 			}
 			default:
 				throw new CompileException($"Expression not supported: {expression}");

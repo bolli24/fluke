@@ -84,6 +84,34 @@ if false then {
     :print("should not print");
 }
 
+fn check_return(x: int): int {
+    if x == 1 then {
+        return 10;
+    };
+    if x == 2 then {
+        return 20;
+    };
+    0
+}
+
+:assert(check_return(1) == 10);
+:assert(check_return(2) == 20);
+:assert(check_return(3) == 0);
+
+fn chain_return(x: int): int {
+    if x == 1 then {
+        return 10;
+    } else if x == 2 then {
+        return 20;
+    } else {
+        return 30;
+    };
+}
+
+:assert(chain_return(1) == 10);
+:assert(chain_return(2) == 20);
+:assert(chain_return(3) == 30);
+
 if true then {
     :print("unit if");
 }
