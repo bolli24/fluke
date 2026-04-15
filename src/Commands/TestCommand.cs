@@ -14,7 +14,6 @@ internal sealed class TestCommand : Command<TestCommand.Settings> {
 		var failed = 0;
 
 		foreach (var file in files) {
-			var expectError = System.IO.Path.GetFileNameWithoutExtension(file).EndsWith("_error");
 			var originalOut = Console.Out;
 			if (!settings.Output) Console.SetOut(TextWriter.Null);
 			try {
@@ -22,26 +21,16 @@ internal sealed class TestCommand : Command<TestCommand.Settings> {
 				var program = new Generator().GenerateInMemory(ast);
 				program.Run();
 				Console.SetOut(originalOut);
-				if (expectError) {
-					Console.WriteLine($"FAIL {file}");
-					Console.WriteLine($"     Expected a compile error but succeeded");
-					failed++;
-				} else {
-					Console.WriteLine($"PASS {file}");
-					passed++;
-				}
-			} catch (CompileException e) {
+				Console.WriteLine($"PASS {file}");
+				passed++;
+			}
+			catch (CompileException e) {
 				Console.SetOut(originalOut);
-				if (expectError) {
-					Console.WriteLine($"PASS {file}");
-					Console.WriteLine($"     {e.Message}");
-					passed++;
-				} else {
-					Console.WriteLine($"FAIL {file}");
-					Console.WriteLine($"     {e.Message}");
-					failed++;
-				}
-			} catch (Exception e) {
+				Console.WriteLine($"FAIL {file}");
+				Console.WriteLine($"     {e.Message}");
+				failed++;
+			}
+			catch (Exception e) {
 				Console.SetOut(originalOut);
 				Console.WriteLine($"FAIL {file}");
 				Console.WriteLine($"     {e.Message}");
@@ -59,11 +48,14 @@ internal sealed class TestCommand : Command<TestCommand.Settings> {
 			if (Path.GetExtension(path).Equals(extension, StringComparison.OrdinalIgnoreCase)) {
 				return [path];
 			}
+
 			return [];
 		}
+
 		if (Directory.Exists(path)) {
 			return Directory.EnumerateFiles(path, $"*{extension}", SearchOption.AllDirectories);
 		}
+
 		throw new ArgumentException($"Path does not exist: {path}");
 	}
 }

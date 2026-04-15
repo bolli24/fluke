@@ -8,7 +8,7 @@ using System.Reflection.PortableExecutable;
 namespace fluke;
 
 public class FlukeProgram(Type programType) {
-	private Type programType = programType;
+	private readonly Type programType = programType;
 
 	public void Run() {
 		programType.GetMethod("Main")!.Invoke(null, null);
@@ -88,20 +88,32 @@ public class Generator {
 
 	public FlukeProgram GenerateInMemory(Ast ast) {
 		var asmName = new AssemblyName("Fluke");
-		var builder = AssemblyBuilder.DefineDynamicAssembly(asmName, AssemblyBuilderAccess.Run);
+		var builder = new PersistedAssemblyBuilder(asmName, typeof(object).Assembly);
 		var mod = builder.DefineDynamicModule("Fluke");
-		var t = GenerateCore(mod, ast);
-		return new FlukeProgram(t);
+		var (_, mainMethod) = GenerateCore(mod, ast);
+
+		var peBytes = BuildPeBytes(builder, mainMethod);
+		ILVerifier.Verify(peBytes);
+
+		var assembly = Assembly.Load(peBytes);
+		return new FlukeProgram(assembly.GetType("Fluke.Program")!);
 	}
 
 	public void GenerateToFile(Ast ast, string outputPath) {
 		var asmName = new AssemblyName(Path.GetFileNameWithoutExtension(outputPath));
 		var builder = new PersistedAssemblyBuilder(asmName, typeof(object).Assembly);
 		var mod = builder.DefineDynamicModule(asmName.Name!);
-		GenerateCore(mod, ast);
+		var (_, mainMethod) = GenerateCore(mod, ast);
 
+		var peBytes = BuildPeBytes(builder, mainMethod);
+		ILVerifier.Verify(peBytes);
+
+		File.WriteAllBytes(outputPath, peBytes);
+	}
+
+	private byte[] BuildPeBytes(PersistedAssemblyBuilder builder, MethodBuilder entryPoint) {
 		var metadataBuilder = builder.GenerateMetadata(out var ilStream, out var fieldData);
-		var entryPointToken = MetadataTokens.MethodDefinitionHandle(currentMethod.MetadataToken);
+		var entryPointToken = MetadataTokens.MethodDefinitionHandle(entryPoint.MetadataToken);
 
 		var peHeaderBuilder = new PEHeaderBuilder(imageCharacteristics: Characteristics.ExecutableImage);
 		var peBuilder = new ManagedPEBuilder(
@@ -114,14 +126,14 @@ public class Generator {
 		var peBlob = new BlobBuilder();
 		peBuilder.Serialize(peBlob);
 
-		using var fileStream = new FileStream(outputPath, FileMode.Create, FileAccess.Write);
-		peBlob.WriteContentTo(fileStream);
+		return peBlob.ToArray();
 	}
 
-	private Type GenerateCore(ModuleBuilder mod, Ast ast) {
+	private (Type type, MethodBuilder mainMethod) GenerateCore(ModuleBuilder mod, Ast ast) {
 		var type = mod.DefineType("Fluke.Program", TypeAttributes.Public | TypeAttributes.Class);
-		currentMethod = type.DefineMethod("Main", MethodAttributes.Public | MethodAttributes.Static, typeof(void),
+		var mainMethod = type.DefineMethod("Main", MethodAttributes.Public | MethodAttributes.Static, typeof(void),
 			Type.EmptyTypes);
+		currentMethod = mainMethod;
 
 		scopes.Push(new Scope());
 
@@ -137,7 +149,7 @@ public class Generator {
 
 		il.Emit(OpCodes.Ret);
 
-		return type.CreateType();
+		return (type.CreateType(), mainMethod);
 	}
 
 	private void CollectSymbols(IEnumerable<Statement> statements, TypeBuilder type, string prefix, ModuleBuilder mod) {
