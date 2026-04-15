@@ -64,6 +64,26 @@ if 3 == 3 then {
     :print("not equal");
 }
 
+let i = if false then { 1 } else if true then { 2 } else { 3 };
+:assert(i == 2);
+
+let j = if false then { 10 } else if false then { 20 } else { 30 };
+:assert(j == 30);
+
+let k = if true then { 100 } else if true then { 200 } else { 300 };
+:assert(k == 100);
+
+let l = if false then { 1 } else if false then { 2 } else if true then { 3 } else { 4 };
+:assert(l == 3);
+
+if false then {
+    :print("should not print");
+} else if true then {
+    :print("else if taken");
+} else {
+    :print("should not print");
+}
+
 if true then {
     :print("unit if");
 }

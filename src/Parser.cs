@@ -251,7 +251,8 @@ public static class Parser {
 		from thenBlock in Block
 		from elseBlock in Try(
 			from _else in Token(new Token.Keyword("else"))
-			from block in Block
+			from block in Rec(() => If).Select(e => new Expression.Block([], e))
+				.Or(Block)
 			select block
 		).Optional()
 		select (Expression) new Expression.If(condition, thenBlock, elseBlock.GetValueOrDefault());
