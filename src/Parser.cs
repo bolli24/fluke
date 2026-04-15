@@ -76,6 +76,8 @@ public abstract record Expression {
 
 	public record FieldAccess(Expression expression, string name) : Expression;
 
+	public record If(Expression condition, Block thenBlock, Block? elseBlock) : Expression;
+
 	public sealed override string ToString() {
 		return this switch {
 			StringLiteral(var v) => $"\"{v}\"",
@@ -91,6 +93,7 @@ public abstract record Expression {
 			StructInit(var n, var fields) =>
 				$"{n} {{ {string.Join(", ", fields.Select(f => $"{f.Item1} = {f.Item2}"))} }}",
 			FieldAccess(var expr, var name) => $"Field({expr}, {name})",
+			If(var cond, var then, var @else) => $"If({cond}, {then}{(@else != null ? $", {@else}" : "")})",
 			_ => throw new UnreachableException()
 		};
 	}
@@ -152,6 +155,7 @@ public static class Parser {
 			from e in Rec(() => LogicalOr)
 			from _r in Token(new Token.RParen())
 			select e)
+		.Or(Rec(() => If))
 		.Or(from block in Block select (Expression)block);
 
 	private static readonly Parser<Token, Expression> FieldAccess =
@@ -240,6 +244,18 @@ public static class Parser {
 		from args in CallArgs
 		select (Statement)new Statement.IntrinsicCall(name, args.ToArray());
 
+	private static readonly Parser<Token, Expression> If =
+		from _if in Token(new Token.Keyword("if"))
+		from condition in Expression
+		from _then in Token(new Token.Keyword("then"))
+		from thenBlock in Block
+		from elseBlock in Try(
+			from _else in Token(new Token.Keyword("else"))
+			from block in Block
+			select block
+		).Optional()
+		select (Expression) new Expression.If(condition, thenBlock, elseBlock.GetValueOrDefault());
+
 	private static readonly Parser<Token, Statement> ExpressionStatement =
 		from expr in Expression
 		select (Statement)new Statement.ExpressionStatement(expr);
@@ -292,9 +308,9 @@ public static class Parser {
 				select statement)
 			.Or(OneOf(FunctionDecl, StructDecl))
 			.Or(Try(
-				from block in Block
+				from expr in Rec(() => If).Or(from b in Block select (Expression)b)
 				from _ in Not(Token(new Token.RBrace()))
-				select (Statement)new Statement.ExpressionStatement(block)));
+				select (Statement)new Statement.ExpressionStatement(expr)));
 
 	private static readonly Parser<Token, Ast> Program =
 		from stmts in Statement.Many()

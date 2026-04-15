@@ -24,18 +24,22 @@ internal abstract record ExpressionType {
 
 	private record UnitType : ExpressionType;
 
+	private record NeverType : ExpressionType;
+
 	public record Struct(Type clrType, IReadOnlyDictionary<string, ExpressionType> fields) : ExpressionType;
 
 	public static readonly ExpressionType Int = new IntType();
 	public static readonly ExpressionType Bool = new BoolType();
 	public static readonly ExpressionType String = new StringType();
 	public static readonly ExpressionType Unit = new UnitType();
+	public static readonly ExpressionType Never = new NeverType();
 
 	public sealed override string ToString() => this switch {
 		IntType => "int",
 		BoolType => "bool",
 		StringType => "string",
 		UnitType => "unit",
+		NeverType => "never",
 		Struct(var t, _) => t.Name,
 		_ => throw new UnreachableException(),
 	};
@@ -545,6 +549,36 @@ public class Generator {
 				il.Emit(OpCodes.Ldfld, structType.clrType.GetField(name)!);
 
 				return fieldType;
+			}
+			case Expression.If(var condition, var thenBlock, var elseBlock): {
+				var conditionType = BuildExpression(condition);
+
+				if (conditionType != ExpressionType.Bool) {
+					throw new CompileException($"If condition type must be bool. Got '{conditionType}'");
+				}
+
+				var elseLabel = il.DefineLabel();
+				var endLabel = il.DefineLabel();
+
+				il.Emit(OpCodes.Brfalse, elseLabel);
+
+				var thenType = BuildExpression(thenBlock);
+				il.Emit(OpCodes.Br, endLabel);
+				il.MarkLabel(elseLabel);
+
+				if (elseBlock is not null) {
+					var elseType = BuildExpression(elseBlock);
+					if (elseType != thenType && elseType != ExpressionType.Never && thenType != ExpressionType.Never) {
+						throw new CompileException("If and else have incompatible types.");
+					}
+				}
+				else if (thenType != ExpressionType.Unit && thenType != ExpressionType.Never) {
+					throw new CompileException(
+						$"Inner expression type of if expression without else arm must be unit. Got '{thenType}'");
+				}
+				
+				il.MarkLabel(endLabel);
+				return thenType;
 			}
 			default:
 				throw new CompileException($"Expression not supported: {expression}");
