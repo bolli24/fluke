@@ -261,7 +261,7 @@ public static class Parser {
 				.Or(Block)
 			select block
 		).Optional()
-		select (Expression) new Expression.If(condition, thenBlock, elseBlock.GetValueOrDefault());
+		select (Expression)new Expression.If(condition, thenBlock, elseBlock.GetValueOrDefault());
 
 	private static readonly Parser<Token, Statement> ExpressionStatement =
 		from expr in Expression

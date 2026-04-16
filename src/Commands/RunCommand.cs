@@ -4,8 +4,7 @@ namespace fluke.Commands;
 
 internal sealed class RunCommand : Command<RunCommand.Settings> {
 	internal sealed class Settings : CommandSettings {
-		[CommandArgument(0, "<file>")]
-		public string SourceFile { get; init; } = "";
+		[CommandArgument(0, "<file>")] public string SourceFile { get; init; } = "";
 	}
 
 	protected override int Execute(CommandContext context, Settings settings, CancellationToken cancellationToken) {

@@ -1,4 +1,4 @@
 <Solution>
-  <Project Path="fluke.csproj" />
-  <Project Path="fluke.Tests/fluke.Tests.csproj" />
+    <Project Path="fluke.csproj"/>
+    <Project Path="fluke.Tests/fluke.Tests.csproj"/>
 </Solution>

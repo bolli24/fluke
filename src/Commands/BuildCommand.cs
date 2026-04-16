@@ -4,8 +4,7 @@ namespace fluke.Commands;
 
 internal sealed class BuildCommand : Command<BuildCommand.Settings> {
 	internal sealed class Settings : CommandSettings {
-		[CommandArgument(0, "<file>")]
-		public string SourceFile { get; init; } = "";
+		[CommandArgument(0, "<file>")] public string SourceFile { get; init; } = "";
 	}
 
 	protected override int Execute(CommandContext context, Settings settings, CancellationToken cancellationToken) {
@@ -24,20 +23,21 @@ internal sealed class BuildCommand : Command<BuildCommand.Settings> {
 			Console.WriteLine($"Built {dllPath} in {(DateTime.Now - start).Milliseconds} ms");
 
 			File.WriteAllText(runtimeConfigPath, """
-				{
-				  "runtimeOptions": {
-				    "tfm": "net10.0",
-				    "framework": {
-				      "name": "Microsoft.NETCore.App",
-				      "version": "10.0.0"
-				    }
-				  }
-				}
-				""");
+			                                     {
+			                                       "runtimeOptions": {
+			                                         "tfm": "net10.0",
+			                                         "framework": {
+			                                           "name": "Microsoft.NETCore.App",
+			                                           "version": "10.0.0"
+			                                         }
+			                                       }
+			                                     }
+			                                     """);
 			Console.WriteLine($"Wrote {runtimeConfigPath}");
 
 			return 0;
-		} catch (CompileException e) {
+		}
+		catch (CompileException e) {
 			Console.Error.WriteLine(e.Message);
 			return 1;
 		}

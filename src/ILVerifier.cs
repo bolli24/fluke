@@ -45,7 +45,8 @@ internal class RuntimeResolver : IResolver, IDisposable {
 	}
 
 	public PEReader ResolveModule(AssemblyNameInfo referencingAssembly, string fileName) {
-		throw new NotSupportedException($"Multi-module assemblies are not supported (module '{fileName}' referenced by '{referencingAssembly.Name}')");
+		throw new NotSupportedException(
+			$"Multi-module assemblies are not supported (module '{fileName}' referenced by '{referencingAssembly.Name}')");
 	}
 
 	public void Dispose() {
