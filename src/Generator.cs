@@ -578,6 +578,13 @@ public class Generator {
 				il.Emit(OpCodes.Ldloca, local);
 				il.Emit(OpCodes.Initobj, structType.clrType);
 
+				var providedFields = fieldExpressions.Select(f => f.Item1).ToHashSet();
+				var missingFields = structType.fields.Keys.Where(f => !providedFields.Contains(f)).ToList();
+				if (missingFields.Count > 0)
+					throw new CompileException(
+						$"Struct initialization of '{name}' is missing fields: {string.Join(", ", missingFields)}"
+					);
+
 				foreach (var (fieldName, fieldExpr) in fieldExpressions) {
 					if (!structType.fields.TryGetValue(fieldName, out var expectedType))
 						throw new CompileException($"Struct '{name}' has no field '{fieldName}'");
