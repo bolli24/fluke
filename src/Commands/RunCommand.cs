@@ -16,8 +16,13 @@ internal sealed class RunCommand : Command<RunCommand.Settings> {
 			Console.WriteLine($"Built executable in {(DateTime.Now - start).Milliseconds} ms\n");
 			program.Run();
 			return 0;
-		} catch (Exception e) {
+		}
+		catch (CompileException e) {
 			Console.Error.WriteLine(e.Message);
+			return 1;
+		}
+		catch (Exception e) {
+			Console.Error.WriteLine(e);
 			return 1;
 		}
 	}

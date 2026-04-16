@@ -33,7 +33,7 @@ internal sealed class TestCommand : Command<TestCommand.Settings> {
 			catch (Exception e) {
 				Console.SetOut(originalOut);
 				Console.WriteLine($"FAIL {file}");
-				Console.WriteLine($"     {e.Message}");
+				Console.WriteLine(e.ToString());
 				failed++;
 			}
 		}

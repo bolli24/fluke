@@ -28,30 +28,36 @@ internal abstract record ExpressionType {
 
 	public record Struct(Type clrType, IReadOnlyDictionary<string, ExpressionType> fields) : ExpressionType;
 
+	public record Enum(Type clrType, IReadOnlyList<string> variants) : ExpressionType;
+
 	public static readonly ExpressionType Int = new IntType();
 	public static readonly ExpressionType Bool = new BoolType();
 	public static readonly ExpressionType String = new StringType();
 	public static readonly ExpressionType Unit = new UnitType();
 	public static readonly ExpressionType Never = new NeverType();
 
-	public sealed override string ToString() => this switch {
-		IntType => "int",
-		BoolType => "bool",
-		StringType => "string",
-		UnitType => "unit",
-		NeverType => "never",
-		Struct(var t, _) => t.Name,
-		_ => throw new UnreachableException(),
-	};
+	public sealed override string ToString() =>
+		this switch {
+			IntType => "int",
+			BoolType => "bool",
+			StringType => "string",
+			UnitType => "unit",
+			NeverType => "never",
+			Struct(var t, _) => t.Name,
+			Enum(var t, _) => t.Name,
+			_ => throw new UnreachableException(),
+		};
 
-	public Type AsType() => this switch {
-		IntType => typeof(int),
-		BoolType => typeof(bool),
-		StringType => typeof(string),
-		UnitType => typeof(void),
-		Struct(var t, _) => t,
-		_ => throw new UnreachableException(),
-	};
+	public Type AsType() =>
+		this switch {
+			IntType => typeof(int),
+			BoolType => typeof(bool),
+			StringType => typeof(string),
+			UnitType => typeof(void),
+			Struct(var t, _) => t,
+			Enum(var t, _) => t,
+			_ => throw new UnreachableException(),
+		};
 }
 
 internal abstract record Symbol {
@@ -62,6 +68,8 @@ internal abstract record Symbol {
 	public record Function(MethodBuilder method, ExpressionType returnType, ExpressionType[] parameterTypes) : Symbol;
 
 	public record StructType(ExpressionType.Struct type) : Symbol;
+
+	public record EnumType(ExpressionType.Enum type) : Symbol;
 }
 
 internal class Scope {
@@ -84,6 +92,7 @@ public class Generator {
 	private readonly Stack<Scope> scopes = new();
 	private readonly Dictionary<string, Symbol.Function> functions = new();
 	private readonly Dictionary<string, ExpressionType.Struct> structTypes = new();
+	private readonly Dictionary<string, ExpressionType.Enum> enumTypes = new();
 	private readonly Stack<string> nameStack = new();
 
 	public FlukeProgram GenerateInMemory(Ast ast) {
@@ -158,10 +167,13 @@ public class Generator {
 		// Sub-pass 1: register all struct TypeBuilders so names resolve for forward references
 		var pendingStructs = new Dictionary<string, (TypeBuilder builder, (string name, string type)[] fields)>();
 		foreach (var stmt in stmtList) {
-			if (stmt is not Statement.StructDeclaration(var sName, var sFields)) continue;
-			var sb = mod.DefineType(sName,
+			if (stmt is not Statement.StructDeclaration(var sName, var sFields))
+				continue;
+			var sb = mod.DefineType(
+				sName,
 				TypeAttributes.Public | TypeAttributes.Sealed | TypeAttributes.SequentialLayout,
-				typeof(ValueType));
+				typeof(ValueType)
+			);
 			structTypes[sName] = new ExpressionType.Struct(sb, new Dictionary<string, ExpressionType>());
 			pendingStructs[sName] = (sb, sFields.Select(f => (f.Item1, f.Item2)).ToArray());
 		}
@@ -181,9 +193,12 @@ public class Generator {
 					var mangledName = prefix == "" ? decl.name : prefix + "$" + decl.name;
 					var paramTypes = decl.parameters.Select(p => ParseType(p.Item2).AsType()).ToArray();
 					var returnType = ParseType(decl.returnType);
-					var mb = type.DefineMethod(mangledName,
+					var mb = type.DefineMethod(
+						mangledName,
 						MethodAttributes.Public | MethodAttributes.Static,
-						returnType.AsType(), paramTypes);
+						returnType.AsType(),
+						paramTypes
+					);
 					var parameterTypes = decl.parameters.Select(p => ParseType(p.Item2)).ToArray();
 					functions[mangledName] = new Symbol.Function(mb, returnType, parameterTypes);
 					CollectSymbols(decl.body.body, type, mangledName, mod);
@@ -191,6 +206,10 @@ public class Generator {
 				}
 				case Statement.StructDeclaration:
 					break; // handled in sub-passes above
+				case Statement.EnumDeclaration decl: {
+					enumTypes[decl.name] = new ExpressionType.Enum(typeof(int), decl.variants.AsReadOnly());
+					break;
+				}
 				case Statement.ExpressionStatement(Expression.Block(var body, _)):
 					CollectSymbols(body, type, prefix, mod);
 					break;
@@ -203,7 +222,8 @@ public class Generator {
 		return;
 
 		void FinalizeStruct(string name) {
-			if (finalized.Contains(name)) return;
+			if (finalized.Contains(name))
+				return;
 			if (!visitingSet.Add(name)) {
 				var cycleStart = visitingPath.IndexOf(name);
 				var cycle = visitingPath.Skip(cycleStart).Append(name);
@@ -247,54 +267,28 @@ public class Generator {
 					if (structTypes.TryGetValue(name, out var st))
 						scopes.Peek().Define(name, new Symbol.StructType(st));
 					break;
+				case Statement.EnumDeclaration(var name, _):
+					if (enumTypes.TryGetValue(name, out var en))
+						scopes.Peek().Define(name, new Symbol.EnumType(en));
+					break;
 			}
 		}
 	}
 
-	private ExpressionType ParseType(string name) => name switch {
-		"int" => ExpressionType.Int,
-		"bool" => ExpressionType.Bool,
-		"string" => ExpressionType.String,
-		"unit" => ExpressionType.Unit,
-		_ => structTypes.TryGetValue(name, out var st)
-			? st
-			: throw new CompileException($"Unknown type '{name}'")
-	};
+	private ExpressionType ParseType(string name) =>
+		name switch {
+			"int" => ExpressionType.Int,
+			"bool" => ExpressionType.Bool,
+			"string" => ExpressionType.String,
+			"unit" => ExpressionType.Unit,
+			_ => structTypes.TryGetValue(name, out var st) ? st
+				: enumTypes.TryGetValue(name, out var en) ? en
+				: throw new CompileException($"Unknown type '{name}'"),
+		};
 
 	private bool BuildStatement(Statement statement) {
 		var il = currentMethod.GetILGenerator();
 		switch (statement) {
-			case Statement.IntrinsicCall("print", []): {
-				il.Emit(OpCodes.Call, typeof(Console).GetMethod("WriteLine", Type.EmptyTypes));
-				break;
-			}
-			case Statement.IntrinsicCall("print", [var arg]): {
-				var type = BuildExpression(arg);
-				il.Emit(OpCodes.Call, typeof(Console).GetMethod("WriteLine", new[] { type.AsType() }));
-				break;
-			}
-			case Statement.IntrinsicCall("print", var args): {
-				throw new CompileException(
-					$"Too many arguments: {args.Length}. Intrinsic 'print' requires 0 or 1 arguments.");
-			}
-			case Statement.IntrinsicCall("assert", [var arg]): {
-				var type = BuildExpression(arg);
-				if (type != ExpressionType.Bool)
-					throw new CompileException($"Invalid type '{type}'. Expected: 'Bool'");
-
-				var okLabel = il.DefineLabel();
-				il.Emit(OpCodes.Brtrue, okLabel);
-				il.Emit(OpCodes.Ldstr, "Assertion failed");
-				il.Emit(OpCodes.Newobj, typeof(Exception).GetConstructor([typeof(string)])!);
-				il.Emit(OpCodes.Throw);
-				il.MarkLabel(okLabel);
-
-				break;
-			}
-			case Statement.IntrinsicCall("assert", var args): {
-				throw new CompileException(
-					$"Wrong number of arguments: {args.Length}. Intrinsic 'assert' requires 1 argument.");
-			}
 			case Statement.VariableBinding(var name, var expression): {
 				var type = BuildExpression(expression);
 				LocalBuilder? local = null;
@@ -329,7 +323,8 @@ public class Generator {
 				var fnIl = currentMethod.GetILGenerator();
 				var returned = false;
 				foreach (var stmt in body.body) {
-					if (returned) break;
+					if (returned)
+						break;
 					returned = BuildStatement(stmt);
 				}
 
@@ -358,7 +353,8 @@ public class Generator {
 
 					if (var.type != type)
 						throw new CompileException(
-							$"Type mismatch. Can't assign value of type '{type}' to variable of type '{var.type}'");
+							$"Type mismatch. Can't assign value of type '{type}' to variable of type '{var.type}'"
+						);
 
 					Debug.Assert(type == ExpressionType.Unit || var.local != null);
 					if (type != ExpressionType.Unit)
@@ -369,7 +365,8 @@ public class Generator {
 
 					if (containerType is not ExpressionType.Struct structType)
 						throw new CompileException(
-							$"Cannot access field '{field}' on non-struct type '{containerType}'");
+							$"Cannot access field '{field}' on non-struct type '{containerType}'"
+						);
 
 					if (!structType.fields.TryGetValue(field, out var targetType))
 						throw new CompileException($"No field named '{field}' on type '{structType}'");
@@ -377,7 +374,8 @@ public class Generator {
 					var valueType = BuildExpression(expression);
 					if (valueType != targetType)
 						throw new CompileException(
-							$"Type mismatch. Can't assign value of type '{valueType}' to field '{field}' of type '{targetType}'");
+							$"Type mismatch. Can't assign value of type '{valueType}' to field '{field}' of type '{targetType}'"
+						);
 
 					il.Emit(OpCodes.Stfld, structType.clrType.GetField(field)!);
 				}
@@ -389,6 +387,10 @@ public class Generator {
 			}
 			case Statement.StructDeclaration(var name, _): {
 				Define(name, new Symbol.StructType(structTypes[name]));
+				break;
+			}
+			case Statement.EnumDeclaration(var name, _): {
+				Define(name, new Symbol.EnumType(enumTypes[name]));
 				break;
 			}
 			case Statement.ExpressionStatement(var expr): {
@@ -407,6 +409,7 @@ public class Generator {
 			default:
 				throw new CompileException($"Statement not supported: {statement}");
 		}
+
 		return false;
 	}
 
@@ -432,23 +435,33 @@ public class Generator {
 
 				var expectedType = op switch {
 					BinOp.And or BinOp.Or => ExpressionType.Bool,
-					_ => ExpressionType.Int
+					_ => ExpressionType.Int,
 				};
 				if (op is BinOp.Eq or BinOp.Neq) {
 					if (leftType != rightType)
 						throw new CompileException(
-							$"Type mismatch. Can't call operator '{op}' on operands of different types '{leftType}' and '{rightType}'");
+							$"Type mismatch. Can't call operator '{op}' on operands of different types '{leftType}' and '{rightType}'"
+						);
 				}
 				else if (leftType != expectedType || rightType != expectedType) {
 					throw new CompileException(
-						$"Type mismatch. Can't call operator '{op}' on operands of different types '{leftType}' and '{rightType}'");
+						$"Type mismatch. Can't call operator '{op}' on operands of different types '{leftType}' and '{rightType}'"
+					);
 				}
 
 				switch (op) {
-					case BinOp.Add: il.Emit(OpCodes.Add); break;
-					case BinOp.Sub: il.Emit(OpCodes.Sub); break;
-					case BinOp.Mul: il.Emit(OpCodes.Mul); break;
-					case BinOp.Div: il.Emit(OpCodes.Div); break;
+					case BinOp.Add:
+						il.Emit(OpCodes.Add);
+						break;
+					case BinOp.Sub:
+						il.Emit(OpCodes.Sub);
+						break;
+					case BinOp.Mul:
+						il.Emit(OpCodes.Mul);
+						break;
+					case BinOp.Div:
+						il.Emit(OpCodes.Div);
+						break;
 					case BinOp.Eq:
 						il.Emit(OpCodes.Ceq);
 						return ExpressionType.Bool;
@@ -457,9 +470,14 @@ public class Generator {
 						il.Emit(OpCodes.Ldc_I4_0);
 						il.Emit(OpCodes.Ceq);
 						return ExpressionType.Bool;
-					case BinOp.And: il.Emit(OpCodes.And); break;
-					case BinOp.Or: il.Emit(OpCodes.Or); break;
-					default: throw new UnreachableException($"Operator '{op}' is not a valid binary operator.");
+					case BinOp.And:
+						il.Emit(OpCodes.And);
+						break;
+					case BinOp.Or:
+						il.Emit(OpCodes.Or);
+						break;
+					default:
+						throw new UnreachableException($"Operator '{op}' is not a valid binary operator.");
 				}
 
 				return leftType;
@@ -471,7 +489,8 @@ public class Generator {
 					case UnOp.Neg:
 						if (type != ExpressionType.Int) {
 							throw new CompileException(
-								$"Invalid Operator. Can't call operator '{op}' on operand of type '{type}'");
+								$"Invalid Operator. Can't call operator '{op}' on operand of type '{type}'"
+							);
 						}
 
 						il.Emit(OpCodes.Neg);
@@ -479,7 +498,8 @@ public class Generator {
 					case UnOp.Not:
 						if (type != ExpressionType.Bool) {
 							throw new CompileException(
-								$"Invalid Operator. Can't call operator '{op}' on operand of type '{type}'");
+								$"Invalid Operator. Can't call operator '{op}' on operand of type '{type}'"
+							);
 						}
 
 						il.Emit(OpCodes.Ldc_I4_0);
@@ -527,7 +547,8 @@ public class Generator {
 					var argType = BuildExpression(args[i]);
 					if (argType != paramTypes[i])
 						throw new CompileException(
-							$"'{name}' argument {i + 1}: expected '{paramTypes[i]}', got '{argType}'");
+							$"'{name}' argument {i + 1}: expected '{paramTypes[i]}', got '{argType}'"
+						);
 				}
 
 				il.Emit(OpCodes.Call, method);
@@ -537,7 +558,8 @@ public class Generator {
 				scopes.Push(new Scope());
 				var returned = false;
 				foreach (var stmt in body) {
-					if (returned) break;
+					if (returned)
+						break;
 					returned = BuildStatement(stmt);
 				}
 
@@ -564,7 +586,8 @@ public class Generator {
 					var actualType = BuildExpression(fieldExpr); // ..., local_adress, expression_result
 					if (actualType != expectedType)
 						throw new CompileException(
-							$"Field '{fieldName}': expected '{expectedType}', got '{actualType}'");
+							$"Field '{fieldName}': expected '{expectedType}', got '{actualType}'"
+						);
 					il.Emit(OpCodes.Stfld, structType.clrType.GetField(fieldName)!);
 				}
 
@@ -572,17 +595,37 @@ public class Generator {
 				return structType;
 			}
 			case Expression.FieldAccess(var expr, var name): {
+				if (
+					expr is Expression.Identifier(var typeName)
+					&& Resolve(typeName) is Symbol.EnumType(var enumExprType)
+				) {
+					var idx = enumExprType.variants.IndexOf(name);
+					if (idx == -1)
+						throw new CompileException($"No variant named '{name}' on enum '{typeName}'");
+					il.Emit(OpCodes.Ldc_I4, idx);
+					return enumExprType;
+				}
+
 				var type = BuildExpression(expr);
 
-				if (type is not ExpressionType.Struct structType)
-					throw new CompileException($"Can't access field on type '{type}'");
+				switch (type) {
+					case ExpressionType.Struct(var structType, var fields): {
+						if (!fields.TryGetValue(name, out var fieldType))
+							throw new CompileException($"No field named '{name}' on type '{type}'");
+						il.Emit(OpCodes.Ldfld, structType.GetField(name)!);
+						return fieldType;
+					}
+					case ExpressionType.Enum(var enumType, var variants): {
+						var index = variants.IndexOf(name);
+						if (index == -1)
+							throw new CompileException($"No variant named '{name}' on type '{type}'");
 
-				if (!structType.fields.TryGetValue(name, out var fieldType))
-					throw new CompileException($"No field named '{name}' on type '{type}'");
-
-				il.Emit(OpCodes.Ldfld, structType.clrType.GetField(name)!);
-
-				return fieldType;
+						il.Emit(OpCodes.Ldc_I4, index);
+						return type;
+					}
+					default:
+						throw new CompileException($"Can't access field on type '{type}'");
+				}
 			}
 			case Expression.If(var condition, var thenBlock, var elseBlock): {
 				var conditionType = BuildExpression(condition);
@@ -613,14 +656,59 @@ public class Generator {
 				else {
 					if (thenType != ExpressionType.Unit && thenType != ExpressionType.Never) {
 						throw new CompileException(
-							$"Inner expression type of if expression without else arm must be unit. Got '{thenType}'");
+							$"Inner expression type of if expression without else arm must be unit. Got '{thenType}'"
+						);
 					}
+
 					resultType = ExpressionType.Unit;
 				}
 
 				il.MarkLabel(endLabel);
 				return resultType;
 			}
+			case Expression.IntrinsicCall("print", []): {
+				il.Emit(OpCodes.Call, typeof(Console).GetMethod("WriteLine", Type.EmptyTypes));
+				return ExpressionType.Unit;
+			}
+			case Expression.IntrinsicCall("print", [var arg]): {
+				var type = BuildExpression(arg);
+				il.Emit(OpCodes.Call, typeof(Console).GetMethod("WriteLine", new[] { type.AsType() }));
+				return ExpressionType.Unit;
+			}
+			case Expression.IntrinsicCall("print", var args):
+				throw new CompileException(
+					$"Too many arguments: {args.Length}. Intrinsic 'print' requires 0 or 1 arguments."
+				);
+			case Expression.IntrinsicCall("assert", [var arg]): {
+				var type = BuildExpression(arg);
+				if (type != ExpressionType.Bool)
+					throw new CompileException($"Invalid type '{type}'. Expected: 'bool'");
+
+				var okLabel = il.DefineLabel();
+				il.Emit(OpCodes.Brtrue, okLabel);
+				il.Emit(OpCodes.Ldstr, "Assertion failed");
+				il.Emit(OpCodes.Newobj, typeof(Exception).GetConstructor([typeof(string)])!);
+				il.Emit(OpCodes.Throw);
+				il.MarkLabel(okLabel);
+				return ExpressionType.Unit;
+			}
+			case Expression.IntrinsicCall("assert", var args):
+				throw new CompileException(
+					$"Wrong number of arguments: {args.Length}. Intrinsic 'assert' requires 1 argument."
+				);
+			case Expression.IntrinsicCall("enum_to_int", [var arg]): {
+				var type = BuildExpression(arg);
+				if (type is not ExpressionType.Enum)
+					throw new CompileException($"'enum_to_int' expects an enum argument, got '{type}'");
+				return ExpressionType.Int;
+			}
+			case Expression.IntrinsicCall("enum_to_int", var args): {
+				throw new CompileException(
+					$"Wrong number of arguments: {args.Length}. 'enum_to_int' requires 1 argument."
+				);
+			}
+			case Expression.IntrinsicCall(var name, _):
+				throw new CompileException($"Unknown intrinsic '{name}'");
 			default:
 				throw new CompileException($"Expression not supported: {expression}");
 		}
@@ -667,6 +755,5 @@ public class Generator {
 		return null;
 	}
 
-	private void Define(string name, Symbol symbol) =>
-		scopes.Peek().Define(name, symbol);
+	private void Define(string name, Symbol symbol) => scopes.Peek().Define(name, symbol);
 }

@@ -1,0 +1,22 @@
+enum Empty {}
+
+enum Direction {
+    Up, Down, Left, Right
+}
+
+let a = Direction.Up;
+
+:assert(a == Direction.Up);
+
+:assert(:enum_to_int(Direction.Down) == 1);
+:assert(:enum_to_int(Direction.Left) == 2);
+:assert(:enum_to_int(Direction.Right) == 3);
+
+fn is_up(d: Direction): bool {
+    d == Direction.Up
+}
+
+:assert(is_up(a));
+:assert(!is_up(Direction.Down));
+
+:print(a);

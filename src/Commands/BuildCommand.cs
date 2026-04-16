@@ -37,7 +37,7 @@ internal sealed class BuildCommand : Command<BuildCommand.Settings> {
 			Console.WriteLine($"Wrote {runtimeConfigPath}");
 
 			return 0;
-		} catch (Exception e) {
+		} catch (CompileException e) {
 			Console.Error.WriteLine(e.Message);
 			return 1;
 		}

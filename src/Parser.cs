@@ -8,8 +8,6 @@ namespace fluke;
 public record Ast(List<Statement> Statements);
 
 public abstract record Statement {
-	public record IntrinsicCall(string name, Expression[] args) : Statement;
-
 	public record ExpressionStatement(Expression expr) : Statement;
 
 	public record VariableBinding(string name, Expression expr) : Statement;
@@ -24,11 +22,12 @@ public abstract record Statement {
 
 	public record StructDeclaration(string name, (string, string)[] fields) : Statement;
 
+	public record EnumDeclaration(string name, string[] variants) : Statement;
+
 	public record Return(Expression? Expression) : Statement;
 
 	public sealed override string ToString() {
 		return this switch {
-			IntrinsicCall(var name, var args) => $"Intrinsic({name}, {string.Join(", ", args)})",
 			ExpressionStatement(var expr) => $"Expr({expr})",
 			VariableBinding(var name, var expr) => $"Binding({name}, {expr})",
 			Assignment(var lhs, var rhs) => $"Assign({lhs}, {rhs})",
@@ -36,8 +35,11 @@ public abstract record Statement {
 				$"Fn({name}({string.Join(", ", parameters.Select(p => $"{p.Item1}: {p.Item2}"))}) -> {returnType} {body})",
 			StructDeclaration(var name, var fields) =>
 				$"Struct({name} {{ {string.Join(", ", fields.Select(f => $"{f.Item1}: {f.Item2}"))} }})",
+			// EnumDeclaration(var name, var variants) =>
+			//	$"Enum({name} {{ {string.Join(", ", variants.Select(f => f.Item2 != null ? $"{f.Item1}: {f.Item2}" : $"{f.Item2}"))} }})",
+			EnumDeclaration(var name, var variants) => $"Enum({name} {{ {string.Join(", ", variants)}}})",
 			Return(var expr) => expr != null ? $"Return({expr})" : "Return",
-			_ => throw new UnreachableException()
+			_ => throw new UnreachableException(),
 		};
 	}
 }
@@ -81,6 +83,8 @@ public abstract record Expression {
 
 	public record If(Expression condition, Block thenBlock, Block? elseBlock) : Expression;
 
+	public record IntrinsicCall(string name, Expression[] args) : Expression;
+
 	public sealed override string ToString() {
 		return this switch {
 			StringLiteral(var v) => $"\"{v}\"",
@@ -89,15 +93,17 @@ public abstract record Expression {
 			Identifier(var n) => n,
 			BinaryOp(var l, var op, var r) => $"({l} {op} {r})",
 			UnaryOp(var op, var e) => $"({op}{e})",
-			Block(var body, var tail) =>
-				"Block {\n" + string.Join("\n", body.Select(s => "\t" + s)) +
-				(tail != null ? "\n\t" + tail : "") + "\n}",
+			Block(var body, var tail) => "Block {\n"
+			                             + string.Join("\n", body.Select(s => "\t" + s))
+			                             + (tail != null ? "\n\t" + tail : "")
+			                             + "\n}",
 			FunctionCall(var n, var args) => $"{n}({string.Join(", ", args.Select(a => a.ToString()))})",
 			StructInit(var n, var fields) =>
 				$"{n} {{ {string.Join(", ", fields.Select(f => $"{f.Item1} = {f.Item2}"))} }}",
 			FieldAccess(var expr, var name) => $"Field({expr}, {name})",
 			If(var cond, var then, var @else) => $"If({cond}, {then}{(@else != null ? $", {@else}" : "")})",
-			_ => throw new UnreachableException()
+			IntrinsicCall(var n, var args) => $":{n}({string.Join(", ", args.Select(a => a.ToString()))})",
+			_ => throw new UnreachableException(),
 		};
 	}
 }
@@ -105,11 +111,7 @@ public abstract record Expression {
 public static class Parser {
 	// Parses zero or more comma-separated items, allowing an optional trailing comma.
 	private static Parser<Token, IEnumerable<T>> CommaSeparated<T>(Parser<Token, T> p) =>
-		from items in Try(
-			from item in p
-			from _ in Token(new Token.Comma())
-			select item
-		).Many()
+		from items in Try(from item in p from _ in Token(new Token.Comma()) select item).Many()
 		from last in p.Optional()
 		select last.HasValue ? items.Append(last.Value) : items;
 
@@ -140,34 +142,41 @@ public static class Parser {
 		select (Expression)new Expression.StructInit(name, fields.ToArray());
 
 	// Atoms: literals, identifiers, parenthesized expressions, blocks
-	private static readonly Parser<Token, Expression> Atom =
-		(from t in Token(t => t is Token.Int)
-			select (Expression)new Expression.IntLiteral(((Token.Int)t).value))
-		.Or(from t in Token(t => t is Token.Bool)
-			select (Expression)new Expression.BoolLiteral(((Token.Bool)t).value))
-		.Or(from s in String
-			select (Expression)new Expression.StringLiteral(s))
+	private static readonly Parser<Token, Expression> Atom = (
+			from t in Token(t => t is Token.Int)
+			select (Expression)new Expression.IntLiteral(((Token.Int)t).value)
+		)
+		.Or(from t in Token(t => t is Token.Bool) select (Expression)new Expression.BoolLiteral(((Token.Bool)t).value))
+		.Or(from s in String select (Expression)new Expression.StringLiteral(s))
+		.Or(
+			Try(
+				from _colon in Token(new Token.Colon())
+				from name in IdentifierName
+				from args in CallArgs
+				select (Expression)new Expression.IntrinsicCall(name, args.ToArray())
+			)
+		)
 		.Or(Try(StructInit))
-		.Or(Try(
-			from n in IdentifierName
-			from args in CallArgs
-			select (Expression)new Expression.FunctionCall(n, args.ToArray())))
-		.Or(from n in IdentifierName
-			select (Expression)new Expression.Identifier(n))
-		.Or(from _l in Token(new Token.LParen())
+		.Or(
+			Try(
+				from n in IdentifierName
+				from args in CallArgs
+				select (Expression)new Expression.FunctionCall(n, args.ToArray())
+			)
+		)
+		.Or(from n in IdentifierName select (Expression)new Expression.Identifier(n))
+		.Or(
+			from _l in Token(new Token.LParen())
 			from e in Rec(() => LogicalOr)
 			from _r in Token(new Token.RParen())
-			select e)
+			select e
+		)
 		.Or(Rec(() => If))
 		.Or(from block in Block select (Expression)block);
 
 	private static readonly Parser<Token, Expression> FieldAccess =
 		from expr in Atom
-		from accesses in (
-			from _dot in Token(new Token.Dot())
-			from name in IdentifierName
-			select name
-		).Many()
+		from accesses in (from _dot in Token(new Token.Dot()) from name in IdentifierName select name).Many()
 		select accesses.Aggregate(expr, (e, name) => new Expression.FieldAccess(e, name));
 
 	// Unary: -x, !x
@@ -241,12 +250,6 @@ public static class Parser {
 		from _rparen in Token(new Token.RParen())
 		select args;
 
-	private static readonly Parser<Token, Statement> IntrinsicCall =
-		from _colon in Token(new Token.Colon())
-		from name in IdentifierName
-		from args in CallArgs
-		select (Statement)new Statement.IntrinsicCall(name, args.ToArray());
-
 	private static readonly Parser<Token, Expression> If =
 		from _if in Token(new Token.Keyword("if"))
 		from condition in Expression
@@ -311,15 +314,27 @@ public static class Parser {
 		from _rbrace in Token(new Token.RBrace())
 		select (Statement)new Statement.StructDeclaration(name, fields.ToArray());
 
-	private static readonly Parser<Token, Statement> Statement =
-		Try(from statement in OneOf(IntrinsicCall, Try(Assignment), VariableBinding, Return, ExpressionStatement)
-				from _ in Token(new Token.Semicolon())
-				select statement)
-			.Or(OneOf(FunctionDecl, StructDecl))
-			.Or(Try(
+	private static readonly Parser<Token, Statement> EnumDecl =
+		from _enum in Token(new Token.Keyword("enum"))
+		from name in IdentifierName
+		from _brace in Token(new Token.LBrace())
+		from variants in CommaSeparated(IdentifierName)
+		from _rbrace in Token(new Token.RBrace())
+		select (Statement)new Statement.EnumDeclaration(name, variants.ToArray());
+
+	private static readonly Parser<Token, Statement> Statement = Try(
+			from statement in OneOf(Try(Assignment), VariableBinding, Return, ExpressionStatement)
+			from _ in Token(new Token.Semicolon())
+			select statement
+		)
+		.Or(OneOf(FunctionDecl, StructDecl, EnumDecl))
+		.Or(
+			Try(
 				from expr in Rec(() => If).Or(from b in Block select (Expression)b)
 				from _ in Not(Token(new Token.RBrace()))
-				select (Statement)new Statement.ExpressionStatement(expr)));
+				select (Statement)new Statement.ExpressionStatement(expr)
+			)
+		);
 
 	private static readonly Parser<Token, Ast> Program =
 		from stmts in Statement.Many()
