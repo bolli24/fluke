@@ -52,6 +52,8 @@ public abstract record Token {
 
 	public record Bool(bool value) : Token;
 
+	public record Keyword(string name) : Token;
+
 	public sealed override string ToString() {
 		return this switch {
 			Dot => "Dot",
@@ -80,64 +82,62 @@ public abstract record Token {
 			_ => throw new UnreachableException()
 		};
 	}
-
-	public record Keyword(string name) : Token;
 }
 
 public static class Lexer {
 	private static readonly Parser<char, Token> Dot =
-		Char('.').ThenReturn((Token)new Token.Dot());
+		Char('.').ThenReturn<Token>(new Token.Dot());
 
 	private static readonly Parser<char, Token> Colon =
-		Char(':').ThenReturn((Token)new Token.Colon());
+		Char(':').ThenReturn<Token>(new Token.Colon());
 
 	private static readonly Parser<char, Token> Semicolon =
-		Char(';').ThenReturn((Token)new Token.Semicolon());
+		Char(';').ThenReturn<Token>(new Token.Semicolon());
 
 	private static readonly Parser<char, Token> Comma =
-		Char(',').ThenReturn((Token)new Token.Comma());
+		Char(',').ThenReturn<Token>(new Token.Comma());
 
 	private static readonly Parser<char, Token> LParen =
-		Char('(').ThenReturn((Token)new Token.LParen());
+		Char('(').ThenReturn<Token>(new Token.LParen());
 
 	private static readonly Parser<char, Token> RParen =
-		Char(')').ThenReturn((Token)new Token.RParen());
+		Char(')').ThenReturn<Token>(new Token.RParen());
 
 	private static readonly Parser<char, Token> LBrace =
-		Char('{').ThenReturn((Token)new Token.LBrace());
+		Char('{').ThenReturn<Token>(new Token.LBrace());
 
 	private static readonly Parser<char, Token> RBrace =
-		Char('}').ThenReturn((Token)new Token.RBrace());
+		Char('}').ThenReturn<Token>(new Token.RBrace());
 
 	private static readonly Parser<char, Token> Plus =
-		Char('+').ThenReturn((Token)new Token.Plus());
+		Char('+').ThenReturn<Token>(new Token.Plus());
 
 	private static readonly Parser<char, Token> Minus =
-		Char('-').ThenReturn((Token)new Token.Minus());
+		Char('-').ThenReturn<Token>(new Token.Minus());
 
 	private static readonly Parser<char, Token> Star =
-		Char('*').ThenReturn((Token)new Token.Star());
+		Char('*').ThenReturn<Token>(new Token.Star());
 
 	private static readonly Parser<char, Token> Slash =
-		Char('/').ThenReturn((Token)new Token.Slash());
+		Char('/').ThenReturn<Token>(new Token.Slash());
 
 	private static readonly Parser<char, Token> Bang =
-		Char('!').ThenReturn((Token)new Token.Bang());
+		Char('!').ThenReturn<Token>(new Token.Bang());
 
 	private static readonly Parser<char, Token> Equal =
-		Char('=').ThenReturn((Token)new Token.Equal());
+		Char('=').ThenReturn<Token>(new Token.Equal());
 
 	private static readonly Parser<char, Token> EqualEqual =
-		String("==").ThenReturn((Token)new Token.EqualEqual());
+		String("==").ThenReturn<Token>(new Token.EqualEqual());
 
 	private static readonly Parser<char, Token> BangEqual =
-		String("!=").ThenReturn((Token)new Token.BangEqual());
+		String("!=").ThenReturn<Token>(new Token.BangEqual());
 
 	private static readonly Parser<char, Token> PipePipe =
-		String("||").ThenReturn((Token)new Token.PipePipe());
+		String("||").ThenReturn<Token>(new Token.PipePipe());
 
 	private static readonly Parser<char, Token> AmpAmp =
-		String("&&").ThenReturn((Token)new Token.AmpAmp());
+		String("&&").ThenReturn<Token>(new Token.AmpAmp());
 
 	private static readonly Parser<char, Token> String =
 		from _ in Char('"')

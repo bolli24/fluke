@@ -2,8 +2,8 @@ namespace fluke;
 
 public static class IReadOnlyExt {
 	public static int IndexOf<T>(this IReadOnlyList<T> self, T elementToFind) {
-		int i = 0;
-		foreach (T element in self) {
+		var i = 0;
+		foreach (var element in self) {
 			if (Equals(element, elementToFind))
 				return i;
 			i++;

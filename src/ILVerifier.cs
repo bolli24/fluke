@@ -14,11 +14,11 @@ internal static class ILVerifier {
 		var reader = pe.GetMetadataReader();
 		var results = verifier.Verify(pe).ToList();
 
-		if (results.Count > 0) {
-			var messages = results.Select(r =>
-				$"  {MethodName(reader, r.Method)}: {r.Message}");
-			throw new CompileException("IL verification failed:\n" + string.Join("\n", messages));
-		}
+		if (results.Count <= 0) return;
+
+		var messages = results.Select(r =>
+			$"  {MethodName(reader, r.Method)}: {r.Message}");
+		throw new CompileException("IL verification failed:\n" + string.Join("\n", messages));
 	}
 
 	private static string MethodName(MetadataReader reader, MethodDefinitionHandle handle) =>

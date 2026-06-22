@@ -41,7 +41,7 @@ internal static class CompilerPipeline {
 		}
 
 		Console.WriteLine($"Parsed input in {(DateTime.Now - start).Milliseconds} ms");
-		foreach (var statement in ast.Statements) Console.WriteLine(statement);
+		foreach (var statement in ast.statements) Console.WriteLine(statement);
 		Console.WriteLine();
 
 		return ast;

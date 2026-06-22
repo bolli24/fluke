@@ -5,7 +5,7 @@ using static Pidgin.Parser<fluke.Token>;
 
 namespace fluke;
 
-public record Ast(List<Statement> Statements);
+public record Ast(List<Statement> statements);
 
 public abstract record Statement {
 	public record ExpressionStatement(Expression expr) : Statement;
@@ -24,7 +24,7 @@ public abstract record Statement {
 
 	public record EnumDeclaration(string name, EnumVariant[] variants) : Statement;
 
-	public record Return(Expression? Expression) : Statement;
+	public record Return(Expression? expression) : Statement;
 
 	public sealed override string ToString() {
 		return this switch {
@@ -128,8 +128,8 @@ public abstract record Expression {
 				$"{en}.{vn} {{ {string.Join(", ", fields.Select(f => $"{f.Item1} = {f.Item2}"))} }}",
 			FieldAccess(var expr, var name) => $"Field({expr}, {name})",
 			If(var cond, var then, var @else) => $"If({cond}, {then}{(@else != null ? $", {@else}" : "")})",
-			IfLet(var en, var vn, var binds, var scrut, var then, var @else) =>
-				$"IfLet({en}.{vn}{{{string.Join(", ", binds)}}} = {scrut}, {then}{(@else != null ? $", {@else}" : "")})",
+			IfLet(var en, var vn, var binds, var scrutinee, var then, var @else) =>
+				$"IfLet({en}.{vn}{{{string.Join(", ", binds)}}} = {scrutinee}, {then}{(@else != null ? $", {@else}" : "")})",
 			IntrinsicCall(var n, var args) => $":{n}({string.Join(", ", args.Select(a => a.ToString()))})",
 			_ => throw new UnreachableException(),
 		};
@@ -152,8 +152,8 @@ public static class Parser {
 		select ((Token.Identifier)t).name;
 
 	private static readonly Parser<Token, Expression.Block> Block = from _l in Token(new Token.LBrace())
-		from stmts in Rec(() => Statement).Many()
-		from tail in Rec(() => Expression).Optional()
+		from stmts in Rec(() => Statement!).Many()
+		from tail in Rec(() => Expression!).Optional()
 		from _r in Token(new Token.RBrace())
 		select new Expression.Block(stmts.ToArray(), tail.GetValueOrDefault());
 
@@ -207,12 +207,12 @@ public static class Parser {
 		.Or(from n in IdentifierName select (Expression)new Expression.Identifier(n))
 		.Or(
 			from _l in Token(new Token.LParen())
-			from e in Rec(() => LogicalOr)
+			from e in Rec(() => LogicalOr!)
 			from _r in Token(new Token.RParen())
 			select e
 		)
-		.Or(Try(Rec(() => IfLet)))
-		.Or(Rec(() => If))
+		.Or(Try(Rec(() => IfLet!)))
+		.Or(Rec(() => If!))
 		.Or(from block in Block select (Expression)block);
 
 	private static readonly Parser<Token, Expression> FieldAccess =
@@ -223,10 +223,10 @@ public static class Parser {
 	// Unary: -x, !x
 	private static readonly Parser<Token, Expression> Unary =
 		(from _ in Token(new Token.Minus())
-			from e in Rec(() => Unary)
+			from e in Rec(() => Unary!)
 			select (Expression)new Expression.UnaryOp(UnOp.Neg, e))
 		.Or(from _ in Token(new Token.Bang())
-			from e in Rec(() => Unary)
+			from e in Rec(() => Unary!)
 			select (Expression)new Expression.UnaryOp(UnOp.Not, e))
 		.Or(FieldAccess);
 
@@ -323,7 +323,7 @@ public static class Parser {
 		from thenBlock in Block
 		from elseBlock in Try(
 			from _else in Token(new Token.Keyword("else"))
-			from block in Rec(() => If).Select(e => new Expression.Block([], e))
+			from block in Rec(() => If!).Select(e => new Expression.Block([], e))
 				.Or(Block)
 			select block
 		).Optional()

@@ -87,7 +87,7 @@ internal class Scope {
 	public bool IsFunctionBoundary { get; init; }
 
 	public Symbol? Get(string name) =>
-		symbols.TryGetValue(name, out var s) ? s : null;
+		symbols.GetValueOrDefault(name);
 
 	public void Define(string name, Symbol symbol) =>
 		symbols[name] = symbol;
@@ -157,12 +157,12 @@ public class Generator {
 		scopes.Push(new Scope());
 
 		// Pass 1: register all function and struct signatures (recursive)
-		CollectSymbols(ast.Statements, type, "", mod);
-		PreDefineSymbols(ast.Statements);
+		CollectSymbols(ast.statements, type, "", mod);
+		PreDefineSymbols(ast.statements);
 
 		// Pass 2: generate code
 		var il = currentMethod.GetILGenerator();
-		foreach (var statement in ast.Statements) {
+		foreach (var statement in ast.statements) {
 			BuildStatement(statement);
 		}
 
@@ -248,7 +248,7 @@ public class Generator {
 				}
 			}
 
-			var tagField = eb.DefineField(EnumTagFieldName, typeof(int), FieldAttributes.Public);
+			var tagField = eb.DefineField(ENUM_TAG_FIELD_NAME, typeof(int), FieldAttributes.Public);
 			tagField.SetOffset(0);
 			foreach (var info in variantInfos) {
 				if (info.payload is null)
@@ -436,46 +436,49 @@ public class Generator {
 				break;
 			}
 			case Statement.Assignment(var left, var expression): {
-				if (left is Expression.Identifier(var name)) {
-					var type = BuildExpression(expression);
-					var symbol = Resolve(name);
+				switch (left) {
+					case Expression.Identifier(var name): {
+						var type = BuildExpression(expression);
+						var symbol = Resolve(name);
 
-					if (symbol is null)
-						throw new CompileException($"Use of undeclared identifier '{name}'");
+						if (symbol is null)
+							throw new CompileException($"Use of undeclared identifier '{name}'");
 
-					if (symbol is not Symbol.Variable var)
-						throw new CompileException($"Cannot assign to '{name}'. Must be a variable.");
+						if (symbol is not Symbol.Variable var)
+							throw new CompileException($"Cannot assign to '{name}'. Must be a variable.");
 
-					if (var.type != type)
-						throw new CompileException(
-							$"Type mismatch. Can't assign value of type '{type}' to variable of type '{var.type}'"
-						);
+						if (var.type != type)
+							throw new CompileException(
+								$"Type mismatch. Can't assign value of type '{type}' to variable of type '{var.type}'"
+							);
 
-					Debug.Assert(type == ExpressionType.Unit || var.local != null);
-					if (type != ExpressionType.Unit)
-						il.Emit(OpCodes.Stloc, var.local);
-				}
-				else if (left is Expression.FieldAccess(var container, var field)) {
-					var containerType = EmitAddressOf(container);
+						Debug.Assert(type == ExpressionType.Unit || var.local != null);
+						if (type != ExpressionType.Unit)
+							il.Emit(OpCodes.Stloc, var.local);
+						break;
+					}
+					case Expression.FieldAccess(var container, var field): {
+						var containerType = EmitAddressOf(container);
 
-					if (containerType is not ExpressionType.Struct structType)
-						throw new CompileException(
-							$"Cannot access field '{field}' on non-struct type '{containerType}'"
-						);
+						if (containerType is not ExpressionType.Struct structType)
+							throw new CompileException(
+								$"Cannot access field '{field}' on non-struct type '{containerType}'"
+							);
 
-					if (!structType.fields.TryGetValue(field, out var targetType))
-						throw new CompileException($"No field named '{field}' on type '{structType}'");
+						if (!structType.fields.TryGetValue(field, out var targetType))
+							throw new CompileException($"No field named '{field}' on type '{structType}'");
 
-					var valueType = BuildExpression(expression);
-					if (valueType != targetType)
-						throw new CompileException(
-							$"Type mismatch. Can't assign value of type '{valueType}' to field '{field}' of type '{targetType}'"
-						);
+						var valueType = BuildExpression(expression);
+						if (valueType != targetType)
+							throw new CompileException(
+								$"Type mismatch. Can't assign value of type '{valueType}' to field '{field}' of type '{targetType}'"
+							);
 
-					il.Emit(OpCodes.Stfld, structType.clrType.GetField(field)!);
-				}
-				else {
-					throw new CompileException($"Invalid assignment target: {left}");
+						il.Emit(OpCodes.Stfld, structType.clrType.GetField(field)!);
+						break;
+					}
+					default:
+						throw new CompileException($"Invalid assignment target: {left}");
 				}
 
 				break;
@@ -694,7 +697,7 @@ public class Generator {
 
 				il.Emit(OpCodes.Ldloca, local);
 				il.Emit(OpCodes.Ldc_I4, idx);
-				il.Emit(OpCodes.Stfld, enumType.clrType.GetField(EnumTagFieldName)!);
+				il.Emit(OpCodes.Stfld, enumType.clrType.GetField(ENUM_TAG_FIELD_NAME)!);
 
 				var payloadField = enumType.clrType.GetField(variantName)!;
 				foreach (var (fieldName, fieldExpr) in fieldExpressions) {
@@ -808,7 +811,7 @@ public class Generator {
 				il.Emit(OpCodes.Stloc, scrutLocal);
 
 				il.Emit(OpCodes.Ldloc, scrutLocal);
-				il.Emit(OpCodes.Ldfld, enumType.clrType.GetField(EnumTagFieldName)!);
+				il.Emit(OpCodes.Ldfld, enumType.clrType.GetField(ENUM_TAG_FIELD_NAME)!);
 				il.Emit(OpCodes.Ldc_I4, idx);
 				var elseLabelL = il.DefineLabel();
 				var endLabelL = il.DefineLabel();
@@ -898,7 +901,7 @@ public class Generator {
 			case Expression.IntrinsicCall("print", [var arg]): {
 				var type = BuildExpression(arg);
 				if (type is ExpressionType.Enum enumType) {
-					il.Emit(OpCodes.Ldfld, enumType.clrType.GetField(EnumTagFieldName)!);
+					il.Emit(OpCodes.Ldfld, enumType.clrType.GetField(ENUM_TAG_FIELD_NAME)!);
 					il.Emit(OpCodes.Call, typeof(Console).GetMethod("WriteLine", new[] { typeof(int) })!);
 					return ExpressionType.Unit;
 				}
@@ -931,7 +934,7 @@ public class Generator {
 				var type = BuildExpression(arg);
 				if (type is not ExpressionType.Enum enumType)
 					throw new CompileException($"'enum_to_int' expects an enum argument, got '{type}'");
-				il.Emit(OpCodes.Ldfld, enumType.clrType.GetField(EnumTagFieldName)!);
+				il.Emit(OpCodes.Ldfld, enumType.clrType.GetField(ENUM_TAG_FIELD_NAME)!);
 				return ExpressionType.Int;
 			}
 			case Expression.IntrinsicCall("enum_to_int", var args): {
@@ -996,9 +999,9 @@ public class Generator {
 		var endLabel = il.DefineLabel();
 
 		il.Emit(OpCodes.Ldloc, left);
-		il.Emit(OpCodes.Ldfld, enumType.clrType.GetField(EnumTagFieldName)!);
+		il.Emit(OpCodes.Ldfld, enumType.clrType.GetField(ENUM_TAG_FIELD_NAME)!);
 		il.Emit(OpCodes.Ldloc, right);
-		il.Emit(OpCodes.Ldfld, enumType.clrType.GetField(EnumTagFieldName)!);
+		il.Emit(OpCodes.Ldfld, enumType.clrType.GetField(ENUM_TAG_FIELD_NAME)!);
 		il.Emit(OpCodes.Ceq);
 		il.Emit(OpCodes.Brfalse, falseLabel);
 
@@ -1009,7 +1012,7 @@ public class Generator {
 
 			var nextVariant = il.DefineLabel();
 			il.Emit(OpCodes.Ldloc, left);
-			il.Emit(OpCodes.Ldfld, enumType.clrType.GetField(EnumTagFieldName)!);
+			il.Emit(OpCodes.Ldfld, enumType.clrType.GetField(ENUM_TAG_FIELD_NAME)!);
 			il.Emit(OpCodes.Ldc_I4, i);
 			il.Emit(OpCodes.Ceq);
 			il.Emit(OpCodes.Brfalse, nextVariant);
@@ -1036,11 +1039,11 @@ public class Generator {
 		il.Emit(OpCodes.Initobj, enumType.clrType);
 		il.Emit(OpCodes.Ldloca, local);
 		il.Emit(OpCodes.Ldc_I4, tagIndex);
-		il.Emit(OpCodes.Stfld, enumType.clrType.GetField(EnumTagFieldName)!);
+		il.Emit(OpCodes.Stfld, enumType.clrType.GetField(ENUM_TAG_FIELD_NAME)!);
 		il.Emit(OpCodes.Ldloc, local);
 	}
 
-	private const string EnumTagFieldName = "$tag";
+	private const string ENUM_TAG_FIELD_NAME = "$tag";
 
 	private ExpressionType EmitAddressOf(Expression expr) {
 		var il = currentMethod.GetILGenerator();
