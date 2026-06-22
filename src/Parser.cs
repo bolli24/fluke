@@ -37,7 +37,8 @@ public abstract record Statement {
 				$"Struct({name} {{ {string.Join(", ", fields.Select(f => $"{f.Item1}: {f.Item2}"))} }})",
 			// EnumDeclaration(var name, var variants) =>
 			//	$"Enum({name} {{ {string.Join(", ", variants.Select(f => f.Item2 != null ? $"{f.Item1}: {f.Item2}" : $"{f.Item2}"))} }})",
-			EnumDeclaration(var name, var variants) => $"Enum({name} {{ {string.Join(", ", variants.Select(v => v.ToString()))}}})",
+			EnumDeclaration(var name, var variants) =>
+				$"Enum({name} {{ {string.Join(", ", variants.Select(v => v.ToString()))}}})",
 			Return(var expr) => expr != null ? $"Return({expr})" : "Return",
 			_ => throw new UnreachableException(),
 		};

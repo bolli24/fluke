@@ -1,3 +1,5 @@
+using Pidgin;
+
 namespace fluke.Tests;
 
 public class CompilerTests {
@@ -16,6 +18,12 @@ public class CompilerTests {
 		program.Run();
 	}
 
+	[Fact]
+	public void RejectsUnterminatedBlockCommentDuringLexing() {
+		var ex = Assert.Throws<ParseException<char>>(() => Lexer.Lex("let a = 1; /* unterminated"));
+		Assert.Contains("unterminated block comment", ex.Message);
+	}
+	
 	[Theory]
 	[InlineData("enum Bad { X { s: string } }", "s")]
 	[InlineData("struct W { s: string } enum Bad2 { X { w: W } }", "w.s")]

@@ -1,0 +1,16 @@
+// Comments can appear before a statement.
+let a = 12;
+
+/* Block comments can span
+   multiple lines. */
+let b = 3;
+
+let c = a /* inline block comment */ / b;
+
+:assert(c == 4); // Line comments can appear after a statement.
+
+/*
+	Block comments can also appear between statements.
+*/
+
+:print("comments ok");

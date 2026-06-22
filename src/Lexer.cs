@@ -165,14 +165,23 @@ public static class Lexer {
 		from rest in LetterOrDigit.Or(Char('_')).ManyString()
 		select (Token)new Token.Identifier(first + rest);
 
+	private static readonly Parser<char, Unit> LineComment =
+		String("//").Then(AnyCharExcept('\r', '\n').SkipMany());
+
+	private static readonly Parser<char, Unit> BlockComment =
+		Try(String("/*")).Then(Any.SkipUntil(String("*/").Labelled("closing '*/' (unterminated block comment)")));
+
+	private static readonly Parser<char, Unit> Ignored =
+		OneOf(Whitespace.ThenReturn(Unit.Value), Try(LineComment), BlockComment).SkipMany();
+
 	private static readonly Parser<char, List<Token>> Tokens =
-		from _leading in Whitespace.SkipMany()
+		from _leading in Ignored
 		from tokens in OneOf(
 			Dot, Colon, Semicolon, Comma, LParen, RParen, LBrace, RBrace,
 			Plus, Minus, Star, Slash, Try(BangEqual), Bang, Try(EqualEqual), Equal,
 			Try(PipePipe), Try(AmpAmp),
 			String, Try(IntLiteral), Try(Keyword), Try(BoolLiteral), Identifier
-		).Before(Whitespace.SkipMany()).Many()
+		).Before(Ignored).Many()
 		from _end in End
 		select tokens.ToList();
 
