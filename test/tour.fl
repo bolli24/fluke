@@ -1,0 +1,163 @@
+// Fluke language tour.
+// Run with: fluke run test/tour.fl
+
+/* Comments may be line comments or block comments.
+   Block comments may span multiple lines. */
+
+// Literals, variables, arithmetic, comparisons, and boolean operators.
+let integer = 21;
+let doubled = integer * 2;
+let greeting = "hello";
+let enabled = true;
+
+:assert(doubled == 42);
+:assert(greeting == "hello");
+:assert(enabled && !false);
+:assert((1 + 2) * 3 == 9);
+:assert(10 / 2 - -3 == 8);
+:assert(7 != 8 || false);
+
+// Variables can be reassigned.
+let counter = 0;
+counter = counter + 1;
+counter = counter + 1;
+:assert(counter == 2);
+
+// Blocks can contain statements and return a tail expression.
+let block_value = {
+    let left = 6;
+    let right = 7;
+    left * right
+};
+:assert(block_value == 42);
+
+let unit_value = {
+    :print("unit block");
+};
+let copied_unit = unit_value;
+
+// Functions can take parameters, declare return types, omit the return type for unit,
+// return early, and contain nested functions.
+fn add(a: int, b: int): int {
+    a + b
+}
+
+fn classify(n: int): int {
+    if n == 0 then {
+        return 0;
+    } else if n == 1 then {
+        return 1;
+    };
+    n + 10
+}
+
+fn announce() {
+    :print("announced");
+}
+
+fn nested_functions(): int {
+    fn inner(): int {
+        5
+    }
+
+    inner() + 1
+}
+
+:assert(add(20, 22) == 42);
+:assert(classify(0) == 0);
+:assert(classify(1) == 1);
+:assert(classify(5) == 15);
+:assert(nested_functions() == 6);
+announce();
+
+// If expressions can produce values, and if statements can be used for control flow.
+let branch_value = if counter == 2 then {
+    100
+} else {
+    200
+};
+:assert(branch_value == 100);
+
+if branch_value == 100 then {
+    :print("then branch");
+} else {
+    :print("else branch");
+}
+
+// Struct declarations, construction, field access, nested fields, and field assignment.
+struct Point {
+    x: int,
+    y: int,
+}
+
+struct Player {
+    position: Point,
+    active: bool,
+}
+
+let point = Point { x: 3, y: 4 };
+:assert(point.x == 3);
+:assert(point.y == 4);
+
+let player = Player { position: Point { x: 10, y: 20 }, active: true };
+:assert(player.position.x == 10);
+:assert(player.active);
+
+player.position.x = 99;
+:assert(player.position.x == 99);
+
+// Enums may have bare variants or variants with fields.
+enum Direction {
+    Up,
+    Down,
+    Left,
+    Right,
+}
+
+enum Shape {
+    Point,
+    Circle { radius: int },
+    Rect { width: int, height: int },
+}
+
+let direction = Direction.Left;
+:assert(direction == Direction.Left);
+:assert(:enum_to_int(Direction.Up) == 0);
+:assert(:enum_to_int(Direction.Left) == 2);
+
+let circle = Shape.Circle { radius: 5 };
+let rect = Shape.Rect { width: 3, height: 4 };
+:assert(circle == Shape.Circle { radius: 5 });
+:assert(circle != Shape.Circle { radius: 6 });
+:assert(rect == Shape.Rect { width: 3, height: 4 });
+:assert(rect != Shape.Rect { width: 4, height: 3 });
+
+// If-let checks enum variants and can bind variant fields.
+if let Shape.Circle { radius } = circle {
+    :assert(radius == 5);
+} else {
+    :assert(false);
+}
+
+if let Shape.Rect { width, height } = rect {
+    :assert(width == 3);
+    :assert(height == 4);
+} else {
+    :assert(false);
+}
+
+if let Direction.Left = direction {
+    :assert(true);
+} else {
+    :assert(false);
+}
+
+if let Direction.Right = direction {
+    :assert(false);
+} else {
+    :assert(true);
+}
+
+// Intrinsics are called with a leading colon.
+:print("tour complete");
+:print();
