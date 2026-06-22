@@ -3,7 +3,7 @@ using Pidgin;
 namespace fluke;
 
 internal static class CompilerPipeline {
-	internal static Ast LexAndParse(string path) {
+	internal static Ast LexAndParse(string path, bool verbose = false) {
 		string text;
 		try {
 			using var reader = new StreamReader(path);
@@ -14,7 +14,7 @@ internal static class CompilerPipeline {
 			throw;
 		}
 
-		Console.WriteLine();
+		if (verbose) Console.WriteLine();
 
 		var start = DateTime.Now;
 		List<Token> tokens;
@@ -26,9 +26,11 @@ internal static class CompilerPipeline {
 			throw;
 		}
 
-		Console.WriteLine($"Lexed input in {(DateTime.Now - start).Milliseconds} ms");
-		foreach (var token in tokens) Console.WriteLine(token);
-		Console.WriteLine();
+		if (verbose) {
+			Console.WriteLine($"Lexed input in {(DateTime.Now - start).Milliseconds} ms");
+			foreach (var token in tokens) Console.WriteLine(token);
+			Console.WriteLine();
+		}
 
 		start = DateTime.Now;
 		Ast ast;
@@ -40,9 +42,11 @@ internal static class CompilerPipeline {
 			throw;
 		}
 
-		Console.WriteLine($"Parsed input in {(DateTime.Now - start).Milliseconds} ms");
-		foreach (var statement in ast.statements) Console.WriteLine(statement);
-		Console.WriteLine();
+		if (verbose) {
+			Console.WriteLine($"Parsed input in {(DateTime.Now - start).Milliseconds} ms");
+			foreach (var statement in ast.statements) Console.WriteLine(statement);
+			Console.WriteLine();
+		}
 
 		return ast;
 	}

@@ -6,6 +6,7 @@ internal sealed class TestCommand : Command<TestCommand.Settings> {
 	internal sealed class Settings : CommandSettings {
 		[CommandArgument(0, "<path>")] public string Path { get; init; } = "";
 		[CommandOption("--output")] public bool Output { get; init; }
+		[CommandOption("--verbose")] public bool Verbose { get; init; }
 	}
 
 	protected override int Execute(CommandContext context, Settings settings, CancellationToken cancellationToken) {
@@ -15,10 +16,10 @@ internal sealed class TestCommand : Command<TestCommand.Settings> {
 
 		foreach (var file in files) {
 			var originalOut = Console.Out;
-			if (!settings.Output) Console.SetOut(TextWriter.Null);
 			try {
-				var ast = CompilerPipeline.LexAndParse(file);
+				var ast = CompilerPipeline.LexAndParse(file, settings.Verbose);
 				var program = new Generator().GenerateInMemory(ast);
+				if (!settings.Output) Console.SetOut(TextWriter.Null);
 				program.Run();
 				Console.SetOut(originalOut);
 				Console.WriteLine($"PASS {file}");

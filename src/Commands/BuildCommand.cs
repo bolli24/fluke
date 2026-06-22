@@ -5,11 +5,12 @@ namespace fluke.Commands;
 internal sealed class BuildCommand : Command<BuildCommand.Settings> {
 	internal sealed class Settings : CommandSettings {
 		[CommandArgument(0, "<file>")] public string SourceFile { get; init; } = "";
+		[CommandOption("--verbose")] public bool Verbose { get; init; }
 	}
 
 	protected override int Execute(CommandContext context, Settings settings, CancellationToken cancellationToken) {
 		try {
-			var ast = CompilerPipeline.LexAndParse(settings.SourceFile);
+			var ast = CompilerPipeline.LexAndParse(settings.SourceFile, settings.Verbose);
 
 			var basename = Path.GetFileNameWithoutExtension(settings.SourceFile);
 			var targetDir = Path.Combine(Directory.GetCurrentDirectory(), "target");
