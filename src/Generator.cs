@@ -15,6 +15,8 @@ public class FlukeProgram(Type programType) {
 	}
 }
 
+internal record EnumVariantInfo(string name, ExpressionType.Struct? payload);
+
 internal abstract record ExpressionType {
 	private record IntType : ExpressionType;
 
@@ -28,7 +30,15 @@ internal abstract record ExpressionType {
 
 	public record Struct(Type clrType, IReadOnlyDictionary<string, ExpressionType> fields) : ExpressionType;
 
-	public record Enum(Type clrType, IReadOnlyList<string> variants) : ExpressionType;
+	public record Enum(Type initialClrType, IReadOnlyList<EnumVariantInfo> initialVariants) : ExpressionType {
+		public Type clrType { get; private set; } = initialClrType;
+		public IReadOnlyList<EnumVariantInfo> variants { get; private set; } = initialVariants;
+
+		public void Complete(Type completedClrType, IReadOnlyList<EnumVariantInfo> completedVariants) {
+			clrType = completedClrType;
+			variants = completedVariants;
+		}
+	}
 
 	public static readonly ExpressionType Int = new IntType();
 	public static readonly ExpressionType Bool = new BoolType();
@@ -44,7 +54,7 @@ internal abstract record ExpressionType {
 			UnitType => "unit",
 			NeverType => "never",
 			Struct(var t, _) => t.Name,
-			Enum(var t, _) => t.Name,
+			Enum enumType => enumType.clrType.Name,
 			_ => throw new UnreachableException(),
 		};
 
@@ -55,7 +65,7 @@ internal abstract record ExpressionType {
 			StringType => typeof(string),
 			UnitType => typeof(void),
 			Struct(var t, _) => t,
-			Enum(var t, _) => t,
+			Enum enumType => enumType.clrType,
 			_ => throw new UnreachableException(),
 		};
 }
@@ -178,13 +188,78 @@ public class Generator {
 			pendingStructs[sName] = (sb, sFields.Select(f => (f.Item1, f.Item2)).ToArray());
 		}
 
-		// Sub-pass 2: define fields and finalize in dependency order
+		// Sub-pass 1b: pre-register enum TypeBuilders and per-variant payload struct TypeBuilders.
+		// Placeholder ExpressionType.Enum entries allow ParseType to resolve enum names while
+		// structs are being finalized.
+		var pendingEnums =
+			new Dictionary<string, (TypeBuilder builder, EnumVariant[] variants,
+				Dictionary<string, TypeBuilder> payloads)>();
+		foreach (var stmt in stmtList) {
+			if (stmt is not Statement.EnumDeclaration(var eName, var eVariants))
+				continue;
+			var eb = mod.DefineType(
+				eName,
+				TypeAttributes.Public | TypeAttributes.Sealed | TypeAttributes.ExplicitLayout,
+				typeof(ValueType)
+			);
+			var payloads = new Dictionary<string, TypeBuilder>();
+			foreach (var variant in eVariants) {
+				if (variant is not EnumVariant.Struct(var vName, _))
+					continue;
+				payloads[vName] = mod.DefineType(
+					eName + "$" + vName,
+					TypeAttributes.Public | TypeAttributes.Sealed | TypeAttributes.SequentialLayout,
+					typeof(ValueType)
+				);
+			}
+
+			enumTypes[eName] = new ExpressionType.Enum(eb, Array.Empty<EnumVariantInfo>());
+			pendingEnums[eName] = (eb, eVariants, payloads);
+		}
+
+		// Sub-pass 2: define fields and finalize structs in dependency order
 		var finalized = new HashSet<string>();
 		var visitingSet = new HashSet<string>();
 		var visitingPath = new List<string>();
 
 		foreach (var name in pendingStructs.Keys)
 			FinalizeStruct(name);
+
+		// Sub-pass 3: finalize enum payload structs (with ref-type validation), then enum types.
+		foreach (var (eName, (eb, variants, payloads)) in pendingEnums) {
+			var variantInfos = new List<EnumVariantInfo>(variants.Length);
+			foreach (var variant in variants) {
+				if (variant is EnumVariant.Struct(var vName, var vFields)) {
+					var pb = payloads[vName];
+					var fieldTypes = new Dictionary<string, ExpressionType>();
+					foreach (var (fName, fTypeName) in vFields) {
+						var fieldType = ParseType(fTypeName);
+						AssertNoReferenceTypes(fieldType, eName, vName, fName, new HashSet<string>());
+						pb.DefineField(fName, fieldType.AsType(), FieldAttributes.Public);
+						fieldTypes[fName] = fieldType;
+					}
+
+					var payloadType = pb.CreateType();
+					variantInfos.Add(new EnumVariantInfo(vName,
+						new ExpressionType.Struct(payloadType, fieldTypes)));
+				}
+				else {
+					variantInfos.Add(new EnumVariantInfo(variant.name, null));
+				}
+			}
+
+			var tagField = eb.DefineField(EnumTagFieldName, typeof(int), FieldAttributes.Public);
+			tagField.SetOffset(0);
+			foreach (var info in variantInfos) {
+				if (info.payload is null)
+					continue;
+				var payloadField = eb.DefineField(info.name, info.payload.clrType, FieldAttributes.Public);
+				payloadField.SetOffset(4);
+			}
+
+			var createdEnum = eb.CreateType();
+			enumTypes[eName].Complete(createdEnum, variantInfos);
+		}
 
 		// Main pass: register functions and recurse into blocks
 		foreach (var stmt in stmtList) {
@@ -205,11 +280,8 @@ public class Generator {
 					break;
 				}
 				case Statement.StructDeclaration:
+				case Statement.EnumDeclaration:
 					break; // handled in sub-passes above
-				case Statement.EnumDeclaration decl: {
-					enumTypes[decl.name] = new ExpressionType.Enum(typeof(int), decl.variants.AsReadOnly());
-					break;
-				}
 				case Statement.ExpressionStatement(Expression.Block(var body, _)):
 					CollectSymbols(body, type, prefix, mod);
 					break;
@@ -247,6 +319,29 @@ public class Generator {
 			visitingPath.RemoveAt(visitingPath.Count - 1);
 			visitingSet.Remove(name);
 			finalized.Add(name);
+		}
+	}
+
+	private static void AssertNoReferenceTypes(ExpressionType t, string enumName, string variantName,
+		string fieldPath, HashSet<string> visiting) {
+		switch (t) {
+			case ExpressionType.Struct(var clrType, var fields): {
+				var key = clrType.FullName ?? clrType.Name;
+				if (!visiting.Add(key))
+					return;
+				foreach (var (fName, fType) in fields)
+					AssertNoReferenceTypes(fType, enumName, variantName, fieldPath + "." + fName, visiting);
+				visiting.Remove(key);
+				return;
+			}
+			case ExpressionType.Enum:
+				throw new CompileException(
+					$"Enum variant '{enumName}.{variantName}' field '{fieldPath}': nested enum payloads are not supported");
+			default:
+				if (t == ExpressionType.Int || t == ExpressionType.Bool)
+					return;
+				throw new CompileException(
+					$"Enum variant '{enumName}.{variantName}' field '{fieldPath}' has disallowed type '{t}' (reference types are not allowed in variants)");
 		}
 	}
 
@@ -449,6 +544,16 @@ public class Generator {
 					);
 				}
 
+				if (op is BinOp.Eq or BinOp.Neq) {
+					EmitEqualityFromStack(leftType);
+					if (op == BinOp.Neq) {
+						il.Emit(OpCodes.Ldc_I4_0);
+						il.Emit(OpCodes.Ceq);
+					}
+
+					return ExpressionType.Bool;
+				}
+
 				switch (op) {
 					case BinOp.Add:
 						il.Emit(OpCodes.Add);
@@ -462,14 +567,6 @@ public class Generator {
 					case BinOp.Div:
 						il.Emit(OpCodes.Div);
 						break;
-					case BinOp.Eq:
-						il.Emit(OpCodes.Ceq);
-						return ExpressionType.Bool;
-					case BinOp.Neq:
-						il.Emit(OpCodes.Ceq);
-						il.Emit(OpCodes.Ldc_I4_0);
-						il.Emit(OpCodes.Ceq);
-						return ExpressionType.Bool;
 					case BinOp.And:
 						il.Emit(OpCodes.And);
 						break;
@@ -567,6 +664,57 @@ public class Generator {
 				scopes.Pop();
 				return returned ? ExpressionType.Never : returnType;
 			}
+			case Expression.EnumVariantInit(var enumName, var variantName, var fieldExpressions): {
+				var symbol = Resolve(enumName);
+				if (symbol is null)
+					throw new CompileException($"Use of undefined enum '{enumName}'");
+				if (symbol is not Symbol.EnumType(var enumType))
+					throw new CompileException($"'{enumName}' is not an enum type");
+
+				var idx = enumType.variants.Select(v => v.name).ToList().IndexOf(variantName);
+				if (idx == -1)
+					throw new CompileException($"No variant named '{variantName}' on enum '{enumName}'");
+
+				var info = enumType.variants[idx];
+				if (info.payload is null)
+					throw new CompileException(
+						$"Bare variant '{enumName}.{variantName}' cannot be constructed with field initializers");
+
+				var payload = info.payload;
+				var providedFields = fieldExpressions.Select(f => f.Item1).ToHashSet();
+				var missingFields = payload.fields.Keys.Where(f => !providedFields.Contains(f)).ToList();
+				if (missingFields.Count > 0)
+					throw new CompileException(
+						$"Variant '{enumName}.{variantName}' initialization is missing fields: {string.Join(", ", missingFields)}"
+					);
+
+				var local = il.DeclareLocal(enumType.clrType);
+				il.Emit(OpCodes.Ldloca, local);
+				il.Emit(OpCodes.Initobj, enumType.clrType);
+
+				il.Emit(OpCodes.Ldloca, local);
+				il.Emit(OpCodes.Ldc_I4, idx);
+				il.Emit(OpCodes.Stfld, enumType.clrType.GetField(EnumTagFieldName)!);
+
+				var payloadField = enumType.clrType.GetField(variantName)!;
+				foreach (var (fieldName, fieldExpr) in fieldExpressions) {
+					if (!payload.fields.TryGetValue(fieldName, out var expectedType))
+						throw new CompileException(
+							$"Variant '{enumName}.{variantName}' has no field '{fieldName}'");
+
+					il.Emit(OpCodes.Ldloca, local);
+					il.Emit(OpCodes.Ldflda, payloadField);
+					var actualType = BuildExpression(fieldExpr);
+					if (actualType != expectedType)
+						throw new CompileException(
+							$"Field '{fieldName}': expected '{expectedType}', got '{actualType}'"
+						);
+					il.Emit(OpCodes.Stfld, payload.clrType.GetField(fieldName)!);
+				}
+
+				il.Emit(OpCodes.Ldloc, local);
+				return enumType;
+			}
 			case Expression.StructInit(var name, var fieldExpressions): {
 				var symbol = Resolve(name);
 				if (symbol is null)
@@ -606,10 +754,13 @@ public class Generator {
 					expr is Expression.Identifier(var typeName)
 					&& Resolve(typeName) is Symbol.EnumType(var enumExprType)
 				) {
-					var idx = enumExprType.variants.IndexOf(name);
+					var idx = enumExprType.variants.Select(v => v.name).ToList().IndexOf(name);
 					if (idx == -1)
 						throw new CompileException($"No variant named '{name}' on enum '{typeName}'");
-					il.Emit(OpCodes.Ldc_I4, idx);
+					if (enumExprType.variants[idx].payload is not null)
+						throw new CompileException(
+							$"Variant '{typeName}.{name}' has payload fields and must be constructed with '{typeName}.{name} {{ ... }}'");
+					EmitBareVariant(il, enumExprType, idx);
 					return enumExprType;
 				}
 
@@ -622,17 +773,84 @@ public class Generator {
 						il.Emit(OpCodes.Ldfld, structType.GetField(name)!);
 						return fieldType;
 					}
-					case ExpressionType.Enum(var enumType, var variants): {
-						var index = variants.IndexOf(name);
-						if (index == -1)
-							throw new CompileException($"No variant named '{name}' on type '{type}'");
-
-						il.Emit(OpCodes.Ldc_I4, index);
-						return type;
-					}
 					default:
 						throw new CompileException($"Can't access field on type '{type}'");
 				}
+			}
+			case Expression.IfLet(var enumName, var variantName, var bindings, var scrutinee, var thenBlock,
+				var elseBlock): {
+				var symbol = Resolve(enumName);
+				if (symbol is null)
+					throw new CompileException($"Use of undefined enum '{enumName}'");
+				if (symbol is not Symbol.EnumType(var enumType))
+					throw new CompileException($"'{enumName}' is not an enum type");
+
+				var idx = enumType.variants.Select(v => v.name).ToList().IndexOf(variantName);
+				if (idx == -1)
+					throw new CompileException($"No variant named '{variantName}' on enum '{enumName}'");
+
+				var info = enumType.variants[idx];
+				if (info.payload is null && bindings.Length > 0)
+					throw new CompileException(
+						$"Bare variant '{enumName}.{variantName}' cannot bind fields");
+				if (info.payload is not null)
+					foreach (var b in bindings)
+						if (!info.payload.fields.ContainsKey(b))
+							throw new CompileException(
+								$"Variant '{enumName}.{variantName}' has no field '{b}'");
+
+				var scrutType = BuildExpression(scrutinee);
+				if (scrutType != enumType)
+					throw new CompileException(
+						$"if let scrutinee: expected '{enumType}', got '{scrutType}'");
+
+				var scrutLocal = il.DeclareLocal(enumType.clrType);
+				il.Emit(OpCodes.Stloc, scrutLocal);
+
+				il.Emit(OpCodes.Ldloc, scrutLocal);
+				il.Emit(OpCodes.Ldfld, enumType.clrType.GetField(EnumTagFieldName)!);
+				il.Emit(OpCodes.Ldc_I4, idx);
+				var elseLabelL = il.DefineLabel();
+				var endLabelL = il.DefineLabel();
+				il.Emit(OpCodes.Bne_Un, elseLabelL);
+
+				scopes.Push(new Scope());
+				if (info.payload is not null) {
+					var payloadField = enumType.clrType.GetField(variantName)!;
+					foreach (var b in bindings) {
+						var fieldType = info.payload.fields[b];
+						il.Emit(OpCodes.Ldloc, scrutLocal);
+						il.Emit(OpCodes.Ldfld, payloadField);
+						il.Emit(OpCodes.Ldfld, info.payload.clrType.GetField(b)!);
+						var bindLocal = il.DeclareLocal(fieldType.AsType());
+						il.Emit(OpCodes.Stloc, bindLocal);
+						Define(b, new Symbol.Variable(fieldType, bindLocal));
+					}
+				}
+
+				var thenTypeL = BuildExpression(thenBlock);
+				scopes.Pop();
+				if (thenTypeL != ExpressionType.Never)
+					il.Emit(OpCodes.Br, endLabelL);
+				il.MarkLabel(elseLabelL);
+
+				ExpressionType resultTypeL;
+				if (elseBlock is not null) {
+					var elseTypeL = BuildExpression(elseBlock);
+					if (elseTypeL != thenTypeL && elseTypeL != ExpressionType.Never &&
+					    thenTypeL != ExpressionType.Never)
+						throw new CompileException("if let then and else have incompatible types.");
+					resultTypeL = thenTypeL == ExpressionType.Never ? elseTypeL : thenTypeL;
+				}
+				else {
+					if (thenTypeL != ExpressionType.Unit && thenTypeL != ExpressionType.Never)
+						throw new CompileException(
+							$"Inner expression type of if let without else arm must be unit. Got '{thenTypeL}'");
+					resultTypeL = ExpressionType.Unit;
+				}
+
+				il.MarkLabel(endLabelL);
+				return resultTypeL;
 			}
 			case Expression.If(var condition, var thenBlock, var elseBlock): {
 				var conditionType = BuildExpression(condition);
@@ -679,7 +897,13 @@ public class Generator {
 			}
 			case Expression.IntrinsicCall("print", [var arg]): {
 				var type = BuildExpression(arg);
-				il.Emit(OpCodes.Call, typeof(Console).GetMethod("WriteLine", new[] { type.AsType() }));
+				if (type is ExpressionType.Enum enumType) {
+					il.Emit(OpCodes.Ldfld, enumType.clrType.GetField(EnumTagFieldName)!);
+					il.Emit(OpCodes.Call, typeof(Console).GetMethod("WriteLine", new[] { typeof(int) })!);
+					return ExpressionType.Unit;
+				}
+
+				il.Emit(OpCodes.Call, typeof(Console).GetMethod("WriteLine", new[] { type.AsType() })!);
 				return ExpressionType.Unit;
 			}
 			case Expression.IntrinsicCall("print", var args):
@@ -705,8 +929,9 @@ public class Generator {
 				);
 			case Expression.IntrinsicCall("enum_to_int", [var arg]): {
 				var type = BuildExpression(arg);
-				if (type is not ExpressionType.Enum)
+				if (type is not ExpressionType.Enum enumType)
 					throw new CompileException($"'enum_to_int' expects an enum argument, got '{type}'");
+				il.Emit(OpCodes.Ldfld, enumType.clrType.GetField(EnumTagFieldName)!);
 				return ExpressionType.Int;
 			}
 			case Expression.IntrinsicCall("enum_to_int", var args): {
@@ -720,6 +945,102 @@ public class Generator {
 				throw new CompileException($"Expression not supported: {expression}");
 		}
 	}
+
+	private void EmitEqualityFromStack(ExpressionType type) {
+		var il = currentMethod.GetILGenerator();
+		switch (type) {
+			case ExpressionType.Struct:
+			case ExpressionType.Enum: {
+				var right = il.DeclareLocal(type.AsType());
+				var left = il.DeclareLocal(type.AsType());
+				il.Emit(OpCodes.Stloc, right);
+				il.Emit(OpCodes.Stloc, left);
+				EmitEqualityFromLocals(type, left, right);
+				return;
+			}
+			default:
+				il.Emit(OpCodes.Ceq);
+				return;
+		}
+	}
+
+	private void EmitEqualityFromLocals(ExpressionType type, LocalBuilder left, LocalBuilder right) {
+		switch (type) {
+			case ExpressionType.Struct structType:
+				EmitStructEquality(structType, left, right);
+				return;
+			case ExpressionType.Enum enumType:
+				EmitEnumEquality(enumType, left, right);
+				return;
+			default:
+				throw new UnreachableException($"No local equality emitter for type '{type}'");
+		}
+	}
+
+	private void EmitStructEquality(ExpressionType.Struct structType, LocalBuilder left, LocalBuilder right) {
+		var il = currentMethod.GetILGenerator();
+		il.Emit(OpCodes.Ldc_I4_1);
+		foreach (var (fieldName, fieldType) in structType.fields) {
+			il.Emit(OpCodes.Ldloc, left);
+			il.Emit(OpCodes.Ldfld, structType.clrType.GetField(fieldName)!);
+			il.Emit(OpCodes.Ldloc, right);
+			il.Emit(OpCodes.Ldfld, structType.clrType.GetField(fieldName)!);
+			EmitEqualityFromStack(fieldType);
+			il.Emit(OpCodes.And);
+		}
+	}
+
+	private void EmitEnumEquality(ExpressionType.Enum enumType, LocalBuilder left, LocalBuilder right) {
+		var il = currentMethod.GetILGenerator();
+		var falseLabel = il.DefineLabel();
+		var endLabel = il.DefineLabel();
+
+		il.Emit(OpCodes.Ldloc, left);
+		il.Emit(OpCodes.Ldfld, enumType.clrType.GetField(EnumTagFieldName)!);
+		il.Emit(OpCodes.Ldloc, right);
+		il.Emit(OpCodes.Ldfld, enumType.clrType.GetField(EnumTagFieldName)!);
+		il.Emit(OpCodes.Ceq);
+		il.Emit(OpCodes.Brfalse, falseLabel);
+
+		for (var i = 0; i < enumType.variants.Count; i++) {
+			var info = enumType.variants[i];
+			if (info.payload is null)
+				continue;
+
+			var nextVariant = il.DefineLabel();
+			il.Emit(OpCodes.Ldloc, left);
+			il.Emit(OpCodes.Ldfld, enumType.clrType.GetField(EnumTagFieldName)!);
+			il.Emit(OpCodes.Ldc_I4, i);
+			il.Emit(OpCodes.Ceq);
+			il.Emit(OpCodes.Brfalse, nextVariant);
+
+			il.Emit(OpCodes.Ldloc, left);
+			il.Emit(OpCodes.Ldfld, enumType.clrType.GetField(info.name)!);
+			il.Emit(OpCodes.Ldloc, right);
+			il.Emit(OpCodes.Ldfld, enumType.clrType.GetField(info.name)!);
+			EmitEqualityFromStack(info.payload);
+			il.Emit(OpCodes.Br, endLabel);
+			il.MarkLabel(nextVariant);
+		}
+
+		il.Emit(OpCodes.Ldc_I4_1);
+		il.Emit(OpCodes.Br, endLabel);
+		il.MarkLabel(falseLabel);
+		il.Emit(OpCodes.Ldc_I4_0);
+		il.MarkLabel(endLabel);
+	}
+
+	private static void EmitBareVariant(ILGenerator il, ExpressionType.Enum enumType, int tagIndex) {
+		var local = il.DeclareLocal(enumType.clrType);
+		il.Emit(OpCodes.Ldloca, local);
+		il.Emit(OpCodes.Initobj, enumType.clrType);
+		il.Emit(OpCodes.Ldloca, local);
+		il.Emit(OpCodes.Ldc_I4, tagIndex);
+		il.Emit(OpCodes.Stfld, enumType.clrType.GetField(EnumTagFieldName)!);
+		il.Emit(OpCodes.Ldloc, local);
+	}
+
+	private const string EnumTagFieldName = "$tag";
 
 	private ExpressionType EmitAddressOf(Expression expr) {
 		var il = currentMethod.GetILGenerator();

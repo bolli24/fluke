@@ -20,3 +20,57 @@ fn is_up(d: Direction): bool {
 :assert(!is_up(Direction.Down));
 
 :print(a);
+
+struct DirectionBox {
+    direction: Direction,
+}
+
+let box = DirectionBox { direction: Direction.Left };
+:assert(box.direction == Direction.Left);
+
+enum Shape {
+    Point,
+    Circle { radius: int },
+    Rect { width: int, height: int },
+}
+
+let s = Shape.Point;
+:assert(:enum_to_int(s) == 0);
+
+let c = Shape.Circle { radius: 5 };
+:assert(:enum_to_int(c) == 1);
+
+let r = Shape.Rect { width: 3, height: 4 };
+:assert(:enum_to_int(r) == 2);
+:assert(c == Shape.Circle { radius: 5 });
+:assert(c != Shape.Circle { radius: 6 });
+:assert(r == Shape.Rect { width: 3, height: 4 });
+:assert(r != Shape.Rect { width: 4, height: 3 });
+:assert(c != Shape.Rect { width: 0, height: 0 });
+
+if let Shape.Circle { radius } = c {
+    :assert(radius == 5);
+} else {
+    :assert(false);
+}
+
+if let Shape.Rect { width, height } = c {
+    :assert(false);
+} else {
+    :assert(true);
+}
+
+if let Shape.Rect { width, height } = r {
+    :assert(width == 3);
+    :assert(height == 4);
+}
+
+if let Direction.Up = a {
+    :assert(true);
+} else {
+    :assert(false);
+}
+
+if let Direction.Down = a {
+    :assert(false);
+}

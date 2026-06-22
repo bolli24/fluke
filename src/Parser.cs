@@ -22,7 +22,7 @@ public abstract record Statement {
 
 	public record StructDeclaration(string name, (string, string)[] fields) : Statement;
 
-	public record EnumDeclaration(string name, string[] variants) : Statement;
+	public record EnumDeclaration(string name, EnumVariant[] variants) : Statement;
 
 	public record Return(Expression? Expression) : Statement;
 
@@ -37,11 +37,25 @@ public abstract record Statement {
 				$"Struct({name} {{ {string.Join(", ", fields.Select(f => $"{f.Item1}: {f.Item2}"))} }})",
 			// EnumDeclaration(var name, var variants) =>
 			//	$"Enum({name} {{ {string.Join(", ", variants.Select(f => f.Item2 != null ? $"{f.Item1}: {f.Item2}" : $"{f.Item2}"))} }})",
-			EnumDeclaration(var name, var variants) => $"Enum({name} {{ {string.Join(", ", variants)}}})",
+			EnumDeclaration(var name, var variants) => $"Enum({name} {{ {string.Join(", ", variants.Select(v => v.ToString()))}}})",
 			Return(var expr) => expr != null ? $"Return({expr})" : "Return",
 			_ => throw new UnreachableException(),
 		};
 	}
+}
+
+public abstract record EnumVariant(string name) {
+	public record Bare(string name) : EnumVariant(name);
+
+	public record Struct(string name, (string, string)[] fields) : EnumVariant(name);
+
+	public sealed override string ToString() =>
+		this switch {
+			Bare(var n) => n,
+			Struct(var n, var fields) =>
+				$"{n} {{ {string.Join(", ", fields.Select(f => $"{f.Item1}: {f.Item2}"))} }}",
+			_ => throw new UnreachableException(),
+		};
 }
 
 public enum BinOp {
@@ -79,9 +93,19 @@ public abstract record Expression {
 
 	public record StructInit(string name, (string, Expression)[] fields) : Expression;
 
+	public record EnumVariantInit(string enumName, string variantName, (string, Expression)[] fields) : Expression;
+
 	public record FieldAccess(Expression expression, string name) : Expression;
 
 	public record If(Expression condition, Block thenBlock, Block? elseBlock) : Expression;
+
+	public record IfLet(
+		string enumName,
+		string variantName,
+		string[] bindings,
+		Expression scrutinee,
+		Block thenBlock,
+		Block? elseBlock) : Expression;
 
 	public record IntrinsicCall(string name, Expression[] args) : Expression;
 
@@ -100,8 +124,12 @@ public abstract record Expression {
 			FunctionCall(var n, var args) => $"{n}({string.Join(", ", args.Select(a => a.ToString()))})",
 			StructInit(var n, var fields) =>
 				$"{n} {{ {string.Join(", ", fields.Select(f => $"{f.Item1} = {f.Item2}"))} }}",
+			EnumVariantInit(var en, var vn, var fields) =>
+				$"{en}.{vn} {{ {string.Join(", ", fields.Select(f => $"{f.Item1} = {f.Item2}"))} }}",
 			FieldAccess(var expr, var name) => $"Field({expr}, {name})",
 			If(var cond, var then, var @else) => $"If({cond}, {then}{(@else != null ? $", {@else}" : "")})",
+			IfLet(var en, var vn, var binds, var scrut, var then, var @else) =>
+				$"IfLet({en}.{vn}{{{string.Join(", ", binds)}}} = {scrut}, {then}{(@else != null ? $", {@else}" : "")})",
 			IntrinsicCall(var n, var args) => $":{n}({string.Join(", ", args.Select(a => a.ToString()))})",
 			_ => throw new UnreachableException(),
 		};
@@ -129,8 +157,7 @@ public static class Parser {
 		from _r in Token(new Token.RBrace())
 		select new Expression.Block(stmts.ToArray(), tail.GetValueOrDefault());
 
-	private static readonly Parser<Token, Expression> StructInit =
-		from name in IdentifierName
+	private static readonly Parser<Token, IEnumerable<(string, Expression)>> InitFields =
 		from _lbrace in Token(new Token.LBrace())
 		from fields in CommaSeparated(
 			from name in IdentifierName
@@ -139,7 +166,19 @@ public static class Parser {
 			select (name, expr)
 		)
 		from _rbrace in Token(new Token.RBrace())
+		select fields;
+
+	private static readonly Parser<Token, Expression> StructInit =
+		from name in IdentifierName
+		from fields in InitFields
 		select (Expression)new Expression.StructInit(name, fields.ToArray());
+
+	private static readonly Parser<Token, Expression> EnumVariantInit =
+		from enumName in IdentifierName
+		from _dot in Token(new Token.Dot())
+		from variantName in IdentifierName
+		from fields in InitFields
+		select (Expression)new Expression.EnumVariantInit(enumName, variantName, fields.ToArray());
 
 	// Atoms: literals, identifiers, parenthesized expressions, blocks
 	private static readonly Parser<Token, Expression> Atom = (
@@ -156,6 +195,7 @@ public static class Parser {
 				select (Expression)new Expression.IntrinsicCall(name, args.ToArray())
 			)
 		)
+		.Or(Try(EnumVariantInit))
 		.Or(Try(StructInit))
 		.Or(
 			Try(
@@ -171,6 +211,7 @@ public static class Parser {
 			from _r in Token(new Token.RParen())
 			select e
 		)
+		.Or(Try(Rec(() => IfLet)))
 		.Or(Rec(() => If))
 		.Or(from block in Block select (Expression)block);
 
@@ -250,6 +291,31 @@ public static class Parser {
 		from _rparen in Token(new Token.RParen())
 		select args;
 
+	private static readonly Parser<Token, Expression> IfLet =
+		from _if in Token(new Token.Keyword("if"))
+		from _let in Token(new Token.Keyword("let"))
+		from enumName in IdentifierName
+		from _dot in Token(new Token.Dot())
+		from variantName in IdentifierName
+		from bindings in Try(
+			from _l in Token(new Token.LBrace())
+			from names in CommaSeparated(IdentifierName)
+			from _r in Token(new Token.RBrace())
+			select names.ToArray()
+		).Optional()
+		from _eq in Token(new Token.Equal())
+		from scrutinee in Rec(() => Expression)
+		from thenBlock in Block
+		from elseBlock in Try(
+			from _else in Token(new Token.Keyword("else"))
+			from block in Block
+			select block
+		).Optional()
+		select (Expression)new Expression.IfLet(
+			enumName, variantName,
+			bindings.GetValueOrDefault(Array.Empty<string>()),
+			scrutinee, thenBlock, elseBlock.GetValueOrDefault());
+
 	private static readonly Parser<Token, Expression> If =
 		from _if in Token(new Token.Keyword("if"))
 		from condition in Expression
@@ -314,11 +380,23 @@ public static class Parser {
 		from _rbrace in Token(new Token.RBrace())
 		select (Statement)new Statement.StructDeclaration(name, fields.ToArray());
 
+	private static readonly Parser<Token, EnumVariant> EnumVariantParser =
+		from variantName in IdentifierName
+		from fields in Try(
+			from _l in Token(new Token.LBrace())
+			from fs in CommaSeparated(TypedIdentifier)
+			from _r in Token(new Token.RBrace())
+			select fs
+		).Optional()
+		select fields.HasValue
+			? (EnumVariant)new EnumVariant.Struct(variantName, fields.Value.ToArray())
+			: new EnumVariant.Bare(variantName);
+
 	private static readonly Parser<Token, Statement> EnumDecl =
 		from _enum in Token(new Token.Keyword("enum"))
 		from name in IdentifierName
 		from _brace in Token(new Token.LBrace())
-		from variants in CommaSeparated(IdentifierName)
+		from variants in CommaSeparated(EnumVariantParser)
 		from _rbrace in Token(new Token.RBrace())
 		select (Statement)new Statement.EnumDeclaration(name, variants.ToArray());
 
@@ -330,7 +408,7 @@ public static class Parser {
 		.Or(OneOf(FunctionDecl, StructDecl, EnumDecl))
 		.Or(
 			Try(
-				from expr in Rec(() => If).Or(from b in Block select (Expression)b)
+				from expr in Try(Rec(() => IfLet)).Or(Rec(() => If)).Or(from b in Block select (Expression)b)
 				from _ in Not(Token(new Token.RBrace()))
 				select (Statement)new Statement.ExpressionStatement(expr)
 			)
