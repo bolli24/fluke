@@ -30,6 +30,8 @@ internal abstract record ExpressionType {
 
 	public record Struct(Type clrType, IReadOnlyDictionary<string, ExpressionType> fields) : ExpressionType;
 
+	public record Ref(ExpressionType type) : ExpressionType;
+
 	public record Enum(Type initialClrType, IReadOnlyList<EnumVariantInfo> initialVariants) : ExpressionType {
 		public Type clrType { get; private set; } = initialClrType;
 		public IReadOnlyList<EnumVariantInfo> variants { get; private set; } = initialVariants;
@@ -55,6 +57,7 @@ internal abstract record ExpressionType {
 			NeverType => "never",
 			Struct(var t, _) => t.Name,
 			Enum enumType => enumType.clrType.Name,
+			Ref(var t) => $"ref {t}",
 			_ => throw new UnreachableException(),
 		};
 
@@ -130,7 +133,7 @@ public class Generator {
 		File.WriteAllBytes(outputPath, peBytes);
 	}
 
-	private byte[] BuildPeBytes(PersistedAssemblyBuilder builder, MethodBuilder entryPoint) {
+	private static byte[] BuildPeBytes(PersistedAssemblyBuilder builder, MethodBuilder entryPoint) {
 		var metadataBuilder = builder.GenerateMetadata(out var ilStream, out var fieldData);
 		var entryPointToken = MetadataTokens.MethodDefinitionHandle(entryPoint.MetadataToken);
 
@@ -266,7 +269,10 @@ public class Generator {
 			switch (stmt) {
 				case Statement.FunctionDeclaration decl: {
 					var mangledName = prefix == "" ? decl.name : prefix + "$" + decl.name;
-					var paramTypes = decl.parameters.Select(p => ParseType(p.Item2).AsType()).ToArray();
+					if (decl.parameters.Any(p => p.IsRef))
+						throw new CompileException("'ref' parameters are not supported yet.");
+
+					var paramTypes = decl.parameters.Select(p => ParseType(p.TypeName).AsType()).ToArray();
 					var returnType = ParseType(decl.returnType);
 					var mb = type.DefineMethod(
 						mangledName,
@@ -274,7 +280,7 @@ public class Generator {
 						returnType.AsType(),
 						paramTypes
 					);
-					var parameterTypes = decl.parameters.Select(p => ParseType(p.Item2)).ToArray();
+					var parameterTypes = decl.parameters.Select(p => ParseType(p.TypeName)).ToArray();
 					functions[mangledName] = new Symbol.Function(mb, returnType, parameterTypes);
 					CollectSymbols(decl.body.body, type, mangledName, mod);
 					break;
@@ -409,8 +415,13 @@ public class Generator {
 
 				scopes.Push(new Scope { IsFunctionBoundary = true });
 				for (var i = 0; i < parameters.Length; i++) {
-					var (pName, pType) = parameters[i];
-					scopes.Peek().Define(pName, new Symbol.Parameter(i, ParseType(pType)));
+					var param = parameters[i];
+
+					if (param.IsRef) {
+						throw new CompileException("'ref' parameters are not supported yet.");
+					}
+
+					scopes.Peek().Define(param.Name, new Symbol.Parameter(i, ParseType(param.TypeName)));
 				}
 
 				PreDefineSymbols(body.body);

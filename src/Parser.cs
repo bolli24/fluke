@@ -7,6 +7,12 @@ namespace fluke;
 
 public record Ast(List<Statement> statements);
 
+public struct Param {
+	public string Name;
+	public string TypeName;
+	public bool IsRef;
+}
+
 public abstract record Statement {
 	public record ExpressionStatement(Expression expr) : Statement;
 
@@ -16,7 +22,7 @@ public abstract record Statement {
 
 	public record FunctionDeclaration(
 		string name,
-		(string, string)[] parameters,
+		Param[] parameters,
 		Expression.Block body,
 		string returnType) : Statement;
 
@@ -32,11 +38,9 @@ public abstract record Statement {
 			VariableBinding(var name, var expr) => $"Binding({name}, {expr})",
 			Assignment(var lhs, var rhs) => $"Assign({lhs}, {rhs})",
 			FunctionDeclaration(var name, var parameters, var body, var returnType) =>
-				$"Fn({name}({string.Join(", ", parameters.Select(p => $"{p.Item1}: {p.Item2}"))}) -> {returnType} {body})",
+				$"Fn({name}({string.Join(", ", parameters.Select(p => $"{p.Name}:{(p.IsRef ? "ref" : "")} {p.TypeName}"))}) -> {returnType} {body})",
 			StructDeclaration(var name, var fields) =>
 				$"Struct({name} {{ {string.Join(", ", fields.Select(f => $"{f.Item1}: {f.Item2}"))} }})",
-			// EnumDeclaration(var name, var variants) =>
-			//	$"Enum({name} {{ {string.Join(", ", variants.Select(f => f.Item2 != null ? $"{f.Item1}: {f.Item2}" : $"{f.Item2}"))} }})",
 			EnumDeclaration(var name, var variants) =>
 				$"Enum({name} {{ {string.Join(", ", variants.Select(v => v.ToString()))}}})",
 			Return(var expr) => expr != null ? $"Return({expr})" : "Return",
@@ -358,11 +362,18 @@ public static class Parser {
 		from param_type in IdentifierName
 		select (param_name, param_type);
 
+	private static readonly Parser<Token, Param> Parameter =
+		from param_name in IdentifierName
+		from _colon in Token(new Token.Colon())
+		from isRef in Token(new Token.Keyword("ref")).Optional()
+		from param_type in IdentifierName
+		select new Param { Name = param_name, TypeName = param_type, IsRef = isRef.HasValue };
+
 	private static readonly Parser<Token, Statement> FunctionDecl =
 		from _fn in Token(new Token.Keyword("fn"))
 		from name in IdentifierName
 		from _lparen in Token(new Token.LParen())
-		from parameters in CommaSeparated(TypedIdentifier)
+		from parameters in CommaSeparated(Parameter)
 		from _rparen in Token(new Token.RParen())
 		from returnType in Try(
 				from _colon in Token(new Token.Colon())
