@@ -7,54 +7,77 @@ using static Pidgin.Parser<char>;
 
 namespace fluke;
 
-public abstract record Token {
-	public record Dot : Token;
+public union Token(
+	Token.Dot,
+	Token.Colon,
+	Token.Semicolon,
+	Token.Comma,
+	Token.LParen,
+	Token.RParen,
+	Token.LBrace,
+	Token.RBrace,
+	Token.Plus,
+	Token.Minus,
+	Token.Star,
+	Token.Slash,
+	Token.Bang,
+	Token.Equal,
+	Token.EqualEqual,
+	Token.BangEqual,
+	Token.PipePipe,
+	Token.AmpAmp,
+	Token.Identifier,
+	Token.String,
+	Token.Int,
+	Token.Bool,
+	Token.Keyword) {
+	public record Dot;
 
-	public record Colon : Token;
+	public record Colon;
 
-	public record Semicolon : Token;
+	public record Semicolon;
 
-	public record Comma : Token;
+	public record Comma;
 
-	public record LParen : Token;
+	public record LParen;
 
-	public record RParen : Token;
+	public record RParen;
 
-	public record LBrace : Token;
+	public record LBrace;
 
-	public record RBrace : Token;
+	public record RBrace;
 
-	public record Plus : Token;
+	public record Plus;
 
-	public record Minus : Token;
+	public record Minus;
 
-	public record Star : Token;
+	public record Star;
 
-	public record Slash : Token;
+	public record Slash;
 
-	public record Bang : Token;
+	public record Bang;
 
-	public record Equal : Token;
+	public record Equal;
 
-	public record EqualEqual : Token;
+	public record EqualEqual;
 
-	public record BangEqual : Token;
+	public record BangEqual;
 
-	public record PipePipe : Token;
+	public record PipePipe;
 
-	public record AmpAmp : Token;
+	public record AmpAmp;
 
-	public record Identifier(string name) : Token;
+	public record Identifier(string name);
 
-	public record String(string value) : Token;
+	public record String(string value);
 
-	public record Int(int value) : Token;
+	public record Int(int value);
 
-	public record Bool(bool value) : Token;
+	public record Bool(bool value);
 
-	public record Keyword(string name) : Token;
+	public record Keyword(string name);
 
-	public sealed override string ToString() {
+	public override string ToString() {
 		return this switch {
 			Dot => "Dot",
 			Colon => "Colon",

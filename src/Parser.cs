@@ -13,26 +13,33 @@ public struct Param {
 	public bool IsRef;
 }
 
-public abstract record Statement {
-	public record ExpressionStatement(Expression expr) : Statement;
+public union Statement(
+	Statement.ExpressionStatement,
+	Statement.VariableBinding,
+	Statement.Assignment,
+	Statement.FunctionDeclaration,
+	Statement.StructDeclaration,
+	Statement.EnumDeclaration,
+	Statement.Return) {
+	public record ExpressionStatement(Expression expr);
 
-	public record VariableBinding(string name, Expression expr) : Statement;
+	public record VariableBinding(string name, Expression expr);
 
-	public record Assignment(Expression lhs, Expression rhs) : Statement;
+	public record Assignment(Expression lhs, Expression rhs);
 
 	public record FunctionDeclaration(
 		string name,
 		Param[] parameters,
 		Expression.Block body,
-		string returnType) : Statement;
+		string returnType);
 
-	public record StructDeclaration(string name, (string, string)[] fields) : Statement;
+	public record StructDeclaration(string name, (string, string)[] fields);
 
-	public record EnumDeclaration(string name, EnumVariant[] variants) : Statement;
+	public record EnumDeclaration(string name, EnumVariant[] variants);
 
-	public record Return(Expression? expression) : Statement;
+	public record Return(Expression? expression);
 
-	public sealed override string ToString() {
+	public override string ToString() {
 		return this switch {
 			ExpressionStatement(var expr) => $"Expr({expr})",
 			VariableBinding(var name, var expr) => $"Binding({name}, {expr})",
@@ -49,12 +56,18 @@ public abstract record Statement {
 	}
 }
 
-public abstract record EnumVariant(string name) {
-	public record Bare(string name) : EnumVariant(name);
+public union EnumVariant(EnumVariant.Bare, EnumVariant.Struct) {
+	public record Bare(string name);
 
-	public record Struct(string name, (string, string)[] fields) : EnumVariant(name);
+	public record Struct(string name, (string, string)[] fields);
 
-	public sealed override string ToString() =>
+	public string name => this switch {
+		Bare(var n) => n,
+		Struct(var n, _) => n,
+		_ => throw new UnreachableException(),
+	};
+
+	public override string ToString() =>
 		this switch {
 			Bare(var n) => n,
 			Struct(var n, var fields) =>
@@ -79,30 +92,44 @@ public enum UnOp {
 	Not
 }
 
-public abstract record Expression {
-	public record StringLiteral(string value) : Expression;
+public union Expression(
+	Expression.StringLiteral,
+	Expression.IntLiteral,
+	Expression.BoolLiteral,
+	Expression.Identifier,
+	Expression.BinaryOp,
+	Expression.UnaryOp,
+	Expression.Block,
+	Expression.FunctionCall,
+	Expression.StructInit,
+	Expression.EnumVariantInit,
+	Expression.FieldAccess,
+	Expression.If,
+	Expression.IfLet,
+	Expression.IntrinsicCall) {
+	public record StringLiteral(string value);
 
-	public record IntLiteral(int value) : Expression;
+	public record IntLiteral(int value);
 
-	public record BoolLiteral(bool value) : Expression;
+	public record BoolLiteral(bool value);
 
-	public record Identifier(string name) : Expression;
+	public record Identifier(string name);
 
-	public record BinaryOp(Expression left, BinOp op, Expression right) : Expression;
+	public record BinaryOp(Expression left, BinOp op, Expression right);
 
-	public record UnaryOp(UnOp op, Expression operand) : Expression;
+	public record UnaryOp(UnOp op, Expression operand);
 
-	public record Block(Statement[] body, Expression? tail) : Expression;
+	public record Block(Statement[] body, Expression? tail);
 
-	public record FunctionCall(string name, Expression[] args) : Expression;
+	public record FunctionCall(string name, Expression[] args);
 
-	public record StructInit(string name, (string, Expression)[] fields) : Expression;
+	public record StructInit(string name, (string, Expression)[] fields);
 
-	public record EnumVariantInit(string enumName, string variantName, (string, Expression)[] fields) : Expression;
+	public record EnumVariantInit(string enumName, string variantName, (string, Expression)[] fields);
 
-	public record FieldAccess(Expression expression, string name) : Expression;
+	public record FieldAccess(Expression expression, string name);
 
-	public record If(Expression condition, Block thenBlock, Block? elseBlock) : Expression;
+	public record If(Expression condition, Block thenBlock, Block? elseBlock);
 
 	public record IfLet(
 		string enumName,
@@ -110,11 +137,11 @@ public abstract record Expression {
 		string[] bindings,
 		Expression scrutinee,
 		Block thenBlock,
-		Block? elseBlock) : Expression;
+		Block? elseBlock);
 
-	public record IntrinsicCall(string name, Expression[] args) : Expression;
+	public record IntrinsicCall(string name, Expression[] args);
 
-	public sealed override string ToString() {
+	public override string ToString() {
 		return this switch {
 			StringLiteral(var v) => $"\"{v}\"",
 			IntLiteral(var v) => v.ToString(),
@@ -150,17 +177,17 @@ public static class Parser {
 
 	private static readonly Parser<Token, string> String =
 		from token in Token(t => t is Token.String)
-		select ((Token.String)token).value;
+		select token is Token.String(var value) ? value : throw new UnreachableException();
 
 	private static readonly Parser<Token, string> IdentifierName =
 		from t in Token(t => t is Token.Identifier)
-		select ((Token.Identifier)t).name;
+		select t is Token.Identifier(var name) ? name : throw new UnreachableException();
 
 	private static readonly Parser<Token, Expression.Block> Block = from _l in Token(new Token.LBrace())
 		from stmts in Rec(() => Statement!).Many()
 		from tail in Rec(() => Expression!).Optional()
 		from _r in Token(new Token.RBrace())
-		select new Expression.Block(stmts.ToArray(), tail.GetValueOrDefault());
+		select new Expression.Block(stmts.ToArray(), tail.HasValue ? tail.Value : (Expression?)null);
 
 	private static readonly Parser<Token, IEnumerable<(string, Expression)>> InitFields =
 		from _lbrace in Token(new Token.LBrace())
@@ -188,9 +215,12 @@ public static class Parser {
 	// Atoms: literals, identifiers, parenthesized expressions, blocks
 	private static readonly Parser<Token, Expression> Atom = (
 			from t in Token(t => t is Token.Int)
-			select (Expression)new Expression.IntLiteral(((Token.Int)t).value)
+			select (Expression)new Expression.IntLiteral(
+				t is Token.Int(var value) ? value : throw new UnreachableException())
 		)
-		.Or(from t in Token(t => t is Token.Bool) select (Expression)new Expression.BoolLiteral(((Token.Bool)t).value))
+		.Or(from t in Token(t => t is Token.Bool)
+			select (Expression)new Expression.BoolLiteral(
+				t is Token.Bool(var value) ? value : throw new UnreachableException()))
 		.Or(from s in String select (Expression)new Expression.StringLiteral(s))
 		.Or(
 			Try(
@@ -341,7 +371,7 @@ public static class Parser {
 	private static readonly Parser<Token, Statement> Return =
 		from _return in Token(new Token.Keyword("return"))
 		from expression in Try(Expression).Optional()
-		select (Statement)new Statement.Return(expression.GetValueOrDefault());
+		select (Statement)new Statement.Return(expression.HasValue ? expression.Value : (Expression?)null);
 
 	private static readonly Parser<Token, Statement> VariableBinding =
 		from _ in Token(new Token.Keyword("let"))

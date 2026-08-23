@@ -15,24 +15,32 @@ public class FlukeProgram(Type programType) {
 	}
 }
 
-internal record EnumVariantInfo(string name, ExpressionType.Struct? payload);
+public record EnumVariantInfo(string name, ExpressionType.Struct? payload);
 
-internal abstract record ExpressionType {
-	private record IntType : ExpressionType;
+public union ExpressionType(
+	ExpressionType.IntType,
+	ExpressionType.BoolType,
+	ExpressionType.StringType,
+	ExpressionType.UnitType,
+	ExpressionType.NeverType,
+	ExpressionType.Struct,
+	ExpressionType.Ref,
+	ExpressionType.Enum) {
+	public record IntType;
 
-	private record BoolType : ExpressionType;
+	public record BoolType;
 
-	private record StringType : ExpressionType;
+	public record StringType;
 
-	private record UnitType : ExpressionType;
+	public record UnitType;
 
-	private record NeverType : ExpressionType;
+	public record NeverType;
 
-	public record Struct(Type clrType, IReadOnlyDictionary<string, ExpressionType> fields) : ExpressionType;
+	public record Struct(Type clrType, IReadOnlyDictionary<string, ExpressionType> fields);
 
-	public record Ref(ExpressionType type) : ExpressionType;
+	public record Ref(ExpressionType type);
 
-	public record Enum(Type initialClrType, IReadOnlyList<EnumVariantInfo> initialVariants) : ExpressionType {
+	public record Enum(Type initialClrType, IReadOnlyList<EnumVariantInfo> initialVariants) {
 		public Type clrType { get; private set; } = initialClrType;
 		public IReadOnlyList<EnumVariantInfo> variants { get; private set; } = initialVariants;
 
@@ -48,7 +56,19 @@ internal abstract record ExpressionType {
 	public static readonly ExpressionType Unit = new UnitType();
 	public static readonly ExpressionType Never = new NeverType();
 
-	public sealed override string ToString() =>
+	public static bool operator ==(ExpressionType left, ExpressionType right) =>
+		object.Equals(left.Value, right.Value);
+
+	public static bool operator !=(ExpressionType left, ExpressionType right) =>
+		!(left == right);
+
+	public override bool Equals(object? obj) =>
+		obj is ExpressionType other && this == other;
+
+	public override int GetHashCode() =>
+		Value?.GetHashCode() ?? 0;
+
+	public override string ToString() =>
 		this switch {
 			IntType => "int",
 			BoolType => "bool",
@@ -73,24 +93,29 @@ internal abstract record ExpressionType {
 		};
 }
 
-internal abstract record Symbol {
-	public record Variable(ExpressionType type, LocalBuilder? local) : Symbol;
+public union Symbol(
+	Symbol.Variable,
+	Symbol.Parameter,
+	Symbol.Function,
+	Symbol.StructType,
+	Symbol.EnumType) {
+	public record Variable(ExpressionType type, LocalBuilder? local);
 
-	public record Parameter(int index, ExpressionType type) : Symbol;
+	public record Parameter(int index, ExpressionType type);
 
-	public record Function(MethodBuilder method, ExpressionType returnType, ExpressionType[] parameterTypes) : Symbol;
+	public record Function(MethodBuilder method, ExpressionType returnType, ExpressionType[] parameterTypes);
 
-	public record StructType(ExpressionType.Struct type) : Symbol;
+	public record StructType(ExpressionType.Struct type);
 
-	public record EnumType(ExpressionType.Enum type) : Symbol;
+	public record EnumType(ExpressionType.Enum type);
 }
 
-internal class Scope {
+public class Scope {
 	private readonly Dictionary<string, Symbol> symbols = new();
 	public bool IsFunctionBoundary { get; init; }
 
 	public Symbol? Get(string name) =>
-		symbols.GetValueOrDefault(name);
+		symbols.TryGetValue(name, out var symbol) ? symbol : (Symbol?)null;
 
 	public void Define(string name, Symbol symbol) =>
 		symbols[name] = symbol;
@@ -435,8 +460,8 @@ public class Generator {
 				}
 
 				if (!returned) {
-					if (body.tail != null)
-						BuildExpression(body.tail);
+					if (body.tail is { } tail)
+						BuildExpression(tail);
 					fnIl.Emit(OpCodes.Ret);
 				}
 
@@ -509,7 +534,9 @@ public class Generator {
 				return type == ExpressionType.Never;
 			}
 			case Statement.Return(var expr): {
-				var type = expr != null ? BuildExpression(expr) : ExpressionType.Unit;
+				var type = expr is { } returnExpression
+					? BuildExpression(returnExpression)
+					: ExpressionType.Unit;
 				if (type != currentReturnType)
 					throw new CompileException($"Return type mismatch: expected '{currentReturnType}', got '{type}'");
 				il.Emit(OpCodes.Ret);
@@ -674,7 +701,9 @@ public class Generator {
 					returned = BuildStatement(stmt);
 				}
 
-				var returnType = !returned && tail != null ? BuildExpression(tail) : ExpressionType.Unit;
+				var returnType = !returned && tail is { } tailExpression
+					? BuildExpression(tailExpression)
+					: ExpressionType.Unit;
 				scopes.Pop();
 				return returned ? ExpressionType.Never : returnType;
 			}
