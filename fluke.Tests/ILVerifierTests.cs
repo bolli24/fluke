@@ -24,7 +24,7 @@ public class ILVerifierTests {
 
 		var peBytes = BuildPeBytes(builder);
 
-		var ex = Assert.Throws<CompileException>(() => ILVerifier.Verify(peBytes));
+		var ex = Assert.Throws<ILVerificationException>(() => ILVerifier.Verify(peBytes));
 		Assert.Contains("IL verification failed", ex.Message);
 		Assert.Contains("Broken", ex.Message);
 	}

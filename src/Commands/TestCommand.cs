@@ -28,7 +28,7 @@ internal sealed class TestCommand : Command<TestCommand.Settings> {
 			catch (CompileException e) {
 				Console.SetOut(originalOut);
 				Console.WriteLine($"FAIL {file}");
-				Console.WriteLine($"     {e.Message}");
+				Console.WriteLine(e.FormatMessage(File.ReadAllText(file), file));
 				failed++;
 			}
 			catch (Exception e) {

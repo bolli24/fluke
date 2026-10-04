@@ -4,6 +4,9 @@ using ILVerify;
 
 namespace fluke;
 
+// Emitted invalid IL: a compiler bug, not an error in the user's source
+internal class ILVerificationException(string message) : Exception(message);
+
 internal static class ILVerifier {
 	public static void Verify(byte[] peBytes) {
 		using var resolver = new RuntimeResolver();
@@ -18,7 +21,7 @@ internal static class ILVerifier {
 
 		var messages = results.Select(r =>
 			$"  {MethodName(reader, r.Method)}: {r.Message}");
-		throw new CompileException("IL verification failed:\n" + string.Join("\n", messages));
+		throw new ILVerificationException("IL verification failed:\n" + string.Join("\n", messages));
 	}
 
 	private static string MethodName(MetadataReader reader, MethodDefinitionHandle handle) =>

@@ -7,7 +7,21 @@ using static Pidgin.Parser<char>;
 
 namespace fluke;
 
+public readonly record struct Span(SourcePos Start, SourcePos End) {
+	public override string ToString() => $"{Start.Line}:{Start.Col}";
+
+	public static Span operator |(Span left, Span right) =>
+		new(left.Start < right.Start ? left.Start : right.Start,
+			left.End > right.End ? left.End : right.End);
+}
+
 public abstract record Token {
+	public Span Span { get; init; }
+
+	public virtual bool Equals(Token? other) => other is not null && EqualityContract == other.EqualityContract;
+
+	public override int GetHashCode() => EqualityContract.GetHashCode();
+
 	public record Dot : Token;
 
 	public record Colon : Token;
@@ -174,17 +188,25 @@ public static class Lexer {
 	private static readonly Parser<char, Unit> Ignored =
 		OneOf(Whitespace.ThenReturn(Unit.Value), Try(LineComment), BlockComment).SkipMany();
 
-	private static readonly Parser<char, List<Token>> Tokens =
+	private static Parser<char, Token> WithSpan(Parser<char, Token> p) =>
+		from start in CurrentPos
+		from token in p
+		from end in CurrentPos
+		select token with { Span = new Span(start, end) };
+
+	private static readonly Parser<char, (List<Token>, SourcePos)> Tokens =
 		from _leading in Ignored
-		from tokens in OneOf(
+		from tokens in WithSpan(OneOf(
 			Dot, Colon, Semicolon, Comma, LParen, RParen, LBrace, RBrace,
 			Plus, Minus, Star, Slash, Try(BangEqual), Bang, Try(EqualEqual), Equal,
 			Try(PipePipe), Try(AmpAmp),
 			String, Try(IntLiteral), Try(Keyword), Try(BoolLiteral), Identifier
-		).Before(Ignored).Many()
+		)).Before(Ignored).Many()
 		from _end in End
-		select tokens.ToList();
+		from eof in CurrentPos
+		select (tokens.ToList(), eof);
 
-	public static List<Token> Lex(string input) =>
+	/// Returns parsed tokens and end of input source position
+	public static (List<Token>, SourcePos) Lex(string input) =>
 		Tokens.ParseOrThrow(input);
 }

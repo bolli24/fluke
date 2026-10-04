@@ -18,8 +18,9 @@ internal static class CompilerPipeline {
 
 		var start = DateTime.Now;
 		List<Token> tokens;
+		SourcePos eof;
 		try {
-			tokens = Lexer.Lex(text);
+			(tokens, eof) = Lexer.Lex(text);
 		}
 		catch (ParseException<char> e) {
 			Console.Error.WriteLine($"Lex error: {e.Message}");
@@ -35,7 +36,7 @@ internal static class CompilerPipeline {
 		start = DateTime.Now;
 		Ast ast;
 		try {
-			ast = Parser.Parse(tokens);
+			ast = Parser.Parse(tokens, eof);
 		}
 		catch (ParseException<Token> e) {
 			Console.Error.WriteLine($"Parse error: {e.Message}");

@@ -39,7 +39,7 @@ internal sealed class BuildCommand : Command<BuildCommand.Settings> {
 			return 0;
 		}
 		catch (CompileException e) {
-			Console.Error.WriteLine(e.Message);
+			Console.Error.WriteLine(e.FormatMessage(File.ReadAllText(settings.SourceFile), settings.SourceFile));
 			return 1;
 		}
 	}

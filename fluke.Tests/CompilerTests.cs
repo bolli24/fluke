@@ -25,13 +25,15 @@ public class CompilerTests {
 	}
 	
 	[Theory]
-	[InlineData("enum Bad { X { s: string } }", "s")]
-	[InlineData("struct W { s: string } enum Bad2 { X { w: W } }", "w.s")]
-	public void RejectsReferenceTypesInVariants(string source, string expectedField) {
-		var ast = Parser.Parse(Lexer.Lex(source));
+	[InlineData("enum Bad { X { s: string } }", "s", 19)]
+	[InlineData("struct W { s: string } enum Bad2 { X { w: W } }", "w.s", 43)]
+	public void RejectsReferenceTypesInVariants(string source, string expectedField, int expectedCol) {
+		var ast = Parse(source);
 		var ex = Assert.Throws<CompileException>(() => new Generator().GenerateInMemory(ast));
 		Assert.Contains(expectedField, ex.Message);
 		Assert.Contains("reference types are not allowed", ex.Message);
+		// Points at the variant field's type
+		Assert.Equal(expectedCol, ex.Span.Start.Col);
 	}
 
 	[Theory]
@@ -41,7 +43,7 @@ public class CompilerTests {
 		"no field 'w'")]
 	[InlineData("enum E { A } let e = E.A; if let E.A { v } = e { :print(v); }", "cannot bind fields")]
 	public void RejectsInvalidIfLet(string source, string expectedFragment) {
-		var ast = Parser.Parse(Lexer.Lex(source));
+		var ast = Parse(source);
 		var ex = Assert.Throws<CompileException>(() => new Generator().GenerateInMemory(ast));
 		Assert.Contains(expectedFragment, ex.Message);
 	}
@@ -52,8 +54,13 @@ public class CompilerTests {
 	[InlineData("enum E { A { v: int } } let x = E.A { v: 1, w: 2 };", "no field 'w'")]
 	[InlineData("enum E { A { v: int } } let x = E.A { v: true };", "expected 'int'")]
 	public void RejectsInvalidEnumVariantInit(string source, string expectedFragment) {
-		var ast = Parser.Parse(Lexer.Lex(source));
+		var ast = Parse(source);
 		var ex = Assert.Throws<CompileException>(() => new Generator().GenerateInMemory(ast));
 		Assert.Contains(expectedFragment, ex.Message);
+	}
+
+	private static Ast Parse(string source) {
+		var (tokens, eof) = Lexer.Lex(source);
+		return Parser.Parse(tokens, eof);
 	}
 }
