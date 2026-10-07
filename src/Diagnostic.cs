@@ -2,15 +2,13 @@ using Spectre.Console;
 
 namespace fluke;
 
-public class CompileException(string message, Span span) : Exception($"{span}: {message}") {
-	public Span Span { get; } = span;
-
+public record Diagnostic(string Message, Span Span) {
 	public string FormatMessage(string source, string sourcePath) {
 		var lines = source.Split(["\r\n", "\n"], StringSplitOptions.None);
 		// A trailing newline yields an empty last element; don't count it as a real line.
 		var lineCount = lines[^1].Length == 0 ? lines.Length - 1 : lines.Length;
 		var digits = (Span.End.Line + 1).ToString().Length + 1;
-		var formatted = $"ERROR: {message}\n";
+		var formatted = $"ERROR: {Message}\n";
 		formatted += $"{new string(' ', digits)} ╭───┨ {sourcePath}:{Span.Start.Line}:{Span.Start.Col}\n";
 		formatted += $"{(Span.Start.Line > 2 ? "⋮" : "").PadLeft(digits)} │\n";
 
@@ -50,4 +48,11 @@ public class CompileException(string message, Span span) : Exception($"{span}: {
 
 		return line.Length;
 	}
+}
+
+public class CompileException(IReadOnlyList<Diagnostic> diagnostics)
+	: Exception(string.Join("\n", diagnostics.Select(d => $"{d.Span}: {d.Message}"))) {
+	public IReadOnlyList<Diagnostic> Diagnostics { get; } = diagnostics;
+
+	public CompileException(string message, Span span) : this([new Diagnostic(message, span)]) {}
 }

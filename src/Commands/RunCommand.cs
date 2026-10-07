@@ -18,7 +18,10 @@ internal sealed class RunCommand : Command<RunCommand.Settings> {
 			return 0;
 		}
 		catch (CompileException e) {
-			Console.Error.WriteLine(e.FormatMessage(File.ReadAllText(settings.SourceFile), settings.SourceFile));
+			var source = File.ReadAllText(settings.SourceFile);
+			foreach (var diagnostic in e.Diagnostics) {
+				Console.Error.WriteLine(diagnostic.FormatMessage(source, settings.SourceFile));
+			}
 			return 1;
 		}
 		catch (Exception e) {

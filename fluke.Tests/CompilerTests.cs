@@ -30,10 +30,10 @@ public class CompilerTests {
 	public void RejectsReferenceTypesInVariants(string source, string expectedField, int expectedCol) {
 		var ast = Parse(source);
 		var ex = Assert.Throws<CompileException>(() => new Generator().GenerateInMemory(ast));
-		Assert.Contains(expectedField, ex.Message);
-		Assert.Contains("reference types are not allowed", ex.Message);
+		var d = Assert.Single(ex.Diagnostics, d => d.Message.Contains("reference types are not allowed"));
+		Assert.Contains(expectedField, d.Message);
 		// Points at the variant field's type
-		Assert.Equal(expectedCol, ex.Span.Start.Col);
+		Assert.Equal(expectedCol, d.Span.Start.Col);
 	}
 
 	[Theory]
@@ -45,7 +45,7 @@ public class CompilerTests {
 	public void RejectsInvalidIfLet(string source, string expectedFragment) {
 		var ast = Parse(source);
 		var ex = Assert.Throws<CompileException>(() => new Generator().GenerateInMemory(ast));
-		Assert.Contains(expectedFragment, ex.Message);
+		Assert.Single(ex.Diagnostics, d => d.Message.Contains(expectedFragment));
 	}
 
 	[Theory]
@@ -56,7 +56,7 @@ public class CompilerTests {
 	public void RejectsInvalidEnumVariantInit(string source, string expectedFragment) {
 		var ast = Parse(source);
 		var ex = Assert.Throws<CompileException>(() => new Generator().GenerateInMemory(ast));
-		Assert.Contains(expectedFragment, ex.Message);
+		Assert.Single(ex.Diagnostics, d => d.Message.Contains(expectedFragment));
 	}
 
 	private static Ast Parse(string source) {
