@@ -20,7 +20,7 @@ internal sealed class RunCommand : Command<RunCommand.Settings> {
 		catch (CompileException e) {
 			var source = File.ReadAllText(settings.SourceFile);
 			foreach (var diagnostic in e.Diagnostics) {
-				Console.Error.WriteLine(diagnostic.FormatMessage(source, settings.SourceFile));
+				diagnostic.Print(Diagnostic.ErrorConsole, source, settings.SourceFile);
 			}
 			return 1;
 		}

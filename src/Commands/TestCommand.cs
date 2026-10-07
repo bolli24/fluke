@@ -31,7 +31,7 @@ internal sealed class TestCommand : Command<TestCommand.Settings> {
 
 				var source = File.ReadAllText(file);
 				foreach (var diagnostic in e.Diagnostics) {
-					Console.WriteLine(diagnostic.FormatMessage(source, file));
+					diagnostic.Print(Diagnostic.CreateConsole(Console.Out), source, file);
 				}
 				
 				failed++;

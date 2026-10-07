@@ -3,37 +3,57 @@ using Spectre.Console;
 namespace fluke;
 
 public record Diagnostic(string Message, Span Span) {
+	public static readonly IAnsiConsole ErrorConsole = CreateConsole(Console.Error);
+
+	// Colors are dropped automatically when the writer is redirected or NO_COLOR is set.
+	public static IAnsiConsole CreateConsole(TextWriter writer) {
+		var console = AnsiConsole.Create(new AnsiConsoleSettings { Out = new AnsiConsoleOutput(writer) });
+		// Never wrap: source lines must stay intact for the carets to line up
+		console.Profile.Width = int.MaxValue;
+		return console;
+	}
+
+	public void Print(IAnsiConsole console, string source, string sourcePath) =>
+		console.MarkupLine(FormatMessage(source, sourcePath));
+
+	// Returns Spectre markup using rustc's colors: red error and carets, blue gutter.
 	public string FormatMessage(string source, string sourcePath) {
 		var lines = source.Split(["\r\n", "\n"], StringSplitOptions.None);
 		// A trailing newline yields an empty last element; don't count it as a real line.
 		var lineCount = lines[^1].Length == 0 ? lines.Length - 1 : lines.Length;
 		var digits = (Span.End.Line + 1).ToString().Length + 1;
-		var formatted = $"ERROR: {Message}\n";
-		formatted += $"{new string(' ', digits)} ╭───┨ {sourcePath}:{Span.Start.Line}:{Span.Start.Col}\n";
-		formatted += $"{(Span.Start.Line > 2 ? "⋮" : "").PadLeft(digits)} │\n";
+
+		string Gutter(string label) => $"[blue]{label.PadLeft(digits)} │[/]";
+		string SourceLine(int lineNumber) =>
+			$"{Gutter(lineNumber.ToString())} {Markup.Escape(lines[lineNumber - 1])}\n";
+
+		var formatted = $"[bold red]ERROR:[/] [bold]{Markup.Escape(Message)}[/]\n";
+		formatted +=
+			$"[blue]{new string(' ', digits)} ╭───┨[/] {Markup.Escape(sourcePath)}:{Span.Start.Line}:{Span.Start.Col}\n";
+		formatted += $"{Gutter(Span.Start.Line > 2 ? "⋮" : "")}\n";
 
 		if (Span.Start.Line > 1)
-			formatted += $"{(Span.Start.Line - 1).ToString().PadLeft(digits)} │ {lines[Span.Start.Line - 2]}\n";
+			formatted += SourceLine(Span.Start.Line - 1);
 
 		var lastStart = Span.Start;
 		int i = Span.Start.Line;
 		for (; i <= Span.End.Line; i++) {
 			var line = lines[i - 1];
-			formatted += $"{i.ToString().PadLeft(digits)} │ {line}\n";
+			formatted += SourceLine(i);
 			var startIndex = ColToIndex(line, lastStart.Col);
 			var endIndex = lastStart.Line == Span.End.Line ? ColToIndex(line, Span.End.Col) : line.Length;
 			var length = Math.Max(endIndex - startIndex, 1);
 			// Mirror tabs from the source line so the carets line up with what was printed.
 			var pad = string.Concat(line.Take(startIndex).Select(c => c == '\t' ? '\t' : ' '));
-			formatted += $"{new string(' ', digits)} │ {pad}{new string('^', length)}\n";
+			formatted += $"{Gutter("")} {pad}[bold red]{new string('^', length)}[/]\n";
 			lastStart = lastStart.NewLine();
 		}
 
 		if (lineCount >= i)
-			formatted += $"{i.ToString().PadLeft(digits)} │ {lines[i - 1]}\n";
+			formatted += SourceLine(i);
 
 		if (lineCount > i)
-			formatted += $"{"⋮".PadLeft(digits)} │\n";
+			formatted += $"{Gutter("⋮")}\n";
 
 		return formatted;
 	}
