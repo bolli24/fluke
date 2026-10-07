@@ -125,14 +125,21 @@ public class Generator {
 		return ExpressionType.Error;
 	}
 
+	private void ThrowIfErrors() {
+		if (diagnostics.Count == 0)
+			return;
+		// Passes report out of source order (signatures before bodies), so sort by position; OrderBy is stable
+		throw new CompileException(
+			diagnostics.OrderBy(d => d.Span.Start.Line).ThenBy(d => d.Span.Start.Col).ToList());
+	}
+
 	public FlukeProgram GenerateInMemory(Ast ast) {
 		var asmName = new AssemblyName("Fluke");
 		var builder = new PersistedAssemblyBuilder(asmName, typeof(object).Assembly);
 		var mod = builder.DefineDynamicModule("Fluke");
 		var (_, mainMethod) = GenerateCore(mod, ast);
 
-		if (diagnostics.Count > 0)
-			throw new CompileException(diagnostics);
+		ThrowIfErrors();
 
 		var peBytes = BuildPeBytes(builder, mainMethod);
 		ILVerifier.Verify(peBytes);
@@ -147,8 +154,7 @@ public class Generator {
 		var mod = builder.DefineDynamicModule(asmName.Name!);
 		var (_, mainMethod) = GenerateCore(mod, ast);
 		
-		if (diagnostics.Count > 0)
-			throw new CompileException(diagnostics);
+		ThrowIfErrors();
 
 		var peBytes = BuildPeBytes(builder, mainMethod);
 		ILVerifier.Verify(peBytes);
@@ -598,7 +604,7 @@ public class Generator {
 
 				if (isEquality && leftType != rightType) {
 					Error(
-						$"Type mismatch. Can't call operator '{op}' on operands of different types '{leftType}' and '{rightType}'",
+						$"Type mismatch. Can't call operator '{op.Symbol()}' on operands of different types '{leftType}' and '{rightType}'",
 						expression.Span
 					);
 					return resultType;
@@ -606,7 +612,7 @@ public class Generator {
 
 				if (!isEquality && (leftType != expectedType || rightType != expectedType)) {
 					Error(
-						$"Type mismatch. Operator '{op}' expects '{expectedType}' operands, got '{leftType}' and '{rightType}'",
+						$"Type mismatch. Operator '{op.Symbol()}' expects '{expectedType}' operands, got '{leftType}' and '{rightType}'",
 						expression.Span
 					);
 					return resultType;
@@ -654,7 +660,7 @@ public class Generator {
 					case UnOp.Neg:
 						if (!type.CoercesTo(ExpressionType.Int)) {
 							Error(
-								$"Invalid Operator. Can't call operator '{op}' on operand of type '{type}'",
+								$"Invalid Operator. Can't call operator '{op.Symbol()}' on operand of type '{type}'",
 								expression.Span
 							);
 							return ExpressionType.Int;
@@ -665,7 +671,7 @@ public class Generator {
 					case UnOp.Not:
 						if (!type.CoercesTo(ExpressionType.Bool)) {
 							Error(
-								$"Invalid Operator. Can't call operator '{op}' on operand of type '{type}'",
+								$"Invalid Operator. Can't call operator '{op.Symbol()}' on operand of type '{type}'",
 								expression.Span
 							);
 							return ExpressionType.Bool;

@@ -92,6 +92,29 @@ public enum UnOp {
 	Not
 }
 
+public static class OperatorExtensions {
+	// Source spelling, for diagnostics
+	public static string Symbol(this BinOp op) =>
+		op switch {
+			BinOp.Add => "+",
+			BinOp.Sub => "-",
+			BinOp.Mul => "*",
+			BinOp.Div => "/",
+			BinOp.And => "&&",
+			BinOp.Or => "||",
+			BinOp.Eq => "==",
+			BinOp.Neq => "!=",
+			_ => throw new UnreachableException(),
+		};
+
+	public static string Symbol(this UnOp op) =>
+		op switch {
+			UnOp.Neg => "-",
+			UnOp.Not => "!",
+			_ => throw new UnreachableException(),
+		};
+}
+
 public abstract record Expression {
 	public Span Span { get; init; }
 

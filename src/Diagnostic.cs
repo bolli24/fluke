@@ -24,12 +24,15 @@ public record Diagnostic(string Message, Span Span) {
 		var digits = (Span.End.Line + 1).ToString().Length + 1;
 
 		string Gutter(string label) => $"[blue]{label.PadLeft(digits)} │[/]";
+
 		string SourceLine(int lineNumber) =>
 			$"{Gutter(lineNumber.ToString())} {Markup.Escape(lines[lineNumber - 1])}\n";
 
+		// Editors count a tab as one column, unlike Pidgin
+		var col = ColToIndex(lines[Span.Start.Line - 1], Span.Start.Col) + 1;
 		var formatted = $"[bold red]ERROR:[/] [bold]{Markup.Escape(Message)}[/]\n";
 		formatted +=
-			$"[blue]{new string(' ', digits)} ╭───┨[/] {Markup.Escape(sourcePath)}:{Span.Start.Line}:{Span.Start.Col}\n";
+			$"[blue]{new string(' ', digits)} ╭───┨[/] {Markup.Escape(sourcePath)}:{Span.Start.Line}:{col}\n";
 		formatted += $"{Gutter(Span.Start.Line > 2 ? "⋮" : "")}\n";
 
 		if (Span.Start.Line > 1)
@@ -74,5 +77,5 @@ public class CompileException(IReadOnlyList<Diagnostic> diagnostics)
 	: Exception(string.Join("\n", diagnostics.Select(d => $"{d.Span}: {d.Message}"))) {
 	public IReadOnlyList<Diagnostic> Diagnostics { get; } = diagnostics;
 
-	public CompileException(string message, Span span) : this([new Diagnostic(message, span)]) {}
+	public CompileException(string message, Span span) : this([new Diagnostic(message, span)]) { }
 }
