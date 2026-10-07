@@ -38,10 +38,10 @@ public class CompilerTests {
 
 	[Theory]
 	[InlineData("enum E { A { v: int } } let e = E.A { v: 1 }; if let E.B { v } = e { :print(v); }",
-		"No variant named 'B'")]
+		"no variant 'B'")]
 	[InlineData("enum E { A { v: int } } let e = E.A { v: 1 }; if let E.A { w } = e { :print(w); }",
 		"no field 'w'")]
-	[InlineData("enum E { A } let e = E.A; if let E.A { v } = e { :print(v); }", "cannot bind fields")]
+	[InlineData("enum E { A } let e = E.A; if let E.A { v } = e { :print(v); }", "has no fields to bind")]
 	public void RejectsInvalidIfLet(string source, string expectedFragment) {
 		var ast = Parse(source);
 		var ex = Assert.Throws<CompileException>(() => new Generator().GenerateInMemory(ast));
@@ -49,8 +49,8 @@ public class CompilerTests {
 	}
 
 	[Theory]
-	[InlineData("enum E { A } let x = E.A { v: 1 };", "Bare variant")]
-	[InlineData("enum E { A { v: int } } let x = E.A { };", "missing fields: v")]
+	[InlineData("enum E { A } let x = E.A { v: 1 };", "has no fields and cannot be initialized")]
+	[InlineData("enum E { A { v: int } } let x = E.A { };", "missing fields in initializer of 'E.A': v")]
 	[InlineData("enum E { A { v: int } } let x = E.A { v: 1, w: 2 };", "no field 'w'")]
 	[InlineData("enum E { A { v: int } } let x = E.A { v: true };", "expected 'int'")]
 	public void RejectsInvalidEnumVariantInit(string source, string expectedFragment) {

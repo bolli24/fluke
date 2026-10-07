@@ -30,7 +30,7 @@ public record Diagnostic(string Message, Span Span) {
 
 		// Editors count a tab as one column, unlike Pidgin
 		var col = ColToIndex(lines[Span.Start.Line - 1], Span.Start.Col) + 1;
-		var formatted = $"[bold red]ERROR:[/] [bold]{Markup.Escape(Message)}[/]\n";
+		var formatted = $"[bold red]error:[/] [bold]{Markup.Escape(Message)}[/]\n";
 		formatted +=
 			$"[blue]{new string(' ', digits)} ╭───┨[/] {Markup.Escape(sourcePath)}:{Span.Start.Line}:{col}\n";
 		formatted += $"{Gutter(Span.Start.Line > 2 ? "⋮" : "")}\n";

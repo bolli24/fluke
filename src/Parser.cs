@@ -495,7 +495,7 @@ public static class Parser {
 		
 		var unexpected = err.Unexpected.HasValue ? err.Unexpected.Value.ToString() : "end of input";
 		var expected = string.Join(", ", err.Expected);
-		var message = expected == "" ? $"Unexpected {unexpected}" : $"Unexpected {unexpected}, expected {expected}";
+		var message = expected == "" ? $"unexpected {unexpected}" : $"unexpected {unexpected}, expected {expected}";
 		
 		throw new CompileException(message, span);
 	}
