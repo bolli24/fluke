@@ -11,6 +11,8 @@ internal static class Program {
 				.WithDescription("Compile and run a Fluke source file.");
 			config.AddCommand<BuildCommand>("build")
 				.WithDescription("Compile a Fluke source file to target/<name>.dll.");
+			config.AddCommand<CheckCommand>("check")
+				.WithDescription("Check a Fluke source file for errors without generating code.");
 			config.AddCommand<TestCommand>("test")
 				.WithDescription("Run tests for a file or folder.");
 		});

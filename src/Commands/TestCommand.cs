@@ -18,7 +18,8 @@ internal sealed class TestCommand : Command<TestCommand.Settings> {
 			var originalOut = Console.Out;
 			try {
 				var ast = CompilerPipeline.LexAndParse(file, settings.Verbose);
-				var program = new Generator().GenerateInMemory(ast);
+				var hir = CompilerPipeline.Check(ast, settings.Verbose);
+				var program = CompilerPipeline.Generate(hir);
 				if (!settings.Output) Console.SetOut(TextWriter.Null);
 				program.Run();
 				Console.SetOut(originalOut);
@@ -33,7 +34,7 @@ internal sealed class TestCommand : Command<TestCommand.Settings> {
 				foreach (var diagnostic in e.Diagnostics) {
 					diagnostic.Print(Diagnostic.CreateConsole(Console.Out), source, file);
 				}
-				
+
 				failed++;
 			}
 			catch (Exception e) {

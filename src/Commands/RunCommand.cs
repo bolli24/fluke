@@ -11,9 +11,10 @@ internal sealed class RunCommand : Command<RunCommand.Settings> {
 	protected override int Execute(CommandContext context, Settings settings, CancellationToken cancellationToken) {
 		try {
 			var ast = CompilerPipeline.LexAndParse(settings.SourceFile, settings.Verbose);
+			var hir = CompilerPipeline.Check(ast, settings.Verbose);
 			var start = DateTime.Now;
-			var program = new Generator().GenerateInMemory(ast);
-			Console.WriteLine($"Built executable in {(DateTime.Now - start).Milliseconds} ms\n");
+			var program = CompilerPipeline.Generate(hir);
+			Console.WriteLine($"Built executable in {(DateTime.Now - start).TotalMilliseconds:F0} ms\n");
 			program.Run();
 			return 0;
 		}
@@ -22,6 +23,7 @@ internal sealed class RunCommand : Command<RunCommand.Settings> {
 			foreach (var diagnostic in e.Diagnostics) {
 				diagnostic.Print(Diagnostic.ErrorConsole, source, settings.SourceFile);
 			}
+
 			return 1;
 		}
 		catch (Exception e) {

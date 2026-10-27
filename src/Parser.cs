@@ -238,7 +238,8 @@ public static class Parser {
 			from t in Token(t => t is Token.Int).Labelled("integer")
 			select (Expression)new Expression.IntLiteral(((Token.Int)t).value)
 		)
-		.Or(from t in Token(t => t is Token.Bool).Labelled("bool") select (Expression)new Expression.BoolLiteral(((Token.Bool)t).value))
+		.Or(from t in Token(t => t is Token.Bool).Labelled("bool")
+			select (Expression)new Expression.BoolLiteral(((Token.Bool)t).value))
 		.Or(from s in String select (Expression)new Expression.StringLiteral(s.value))
 		.Or(
 			Try(
@@ -382,7 +383,7 @@ public static class Parser {
 		from thenBlock in Block
 		from elseBlock in Try(
 			from _else in Token(new Token.Keyword("else"))
-			from block in Rec(() => If!).Select(e => new Expression.Block([], e) {Span = e.Span})
+			from block in Rec(() => If!).Select(e => new Expression.Block([], e) { Span = e.Span })
 				.Or(Block)
 			select block
 		).Optional()
@@ -421,7 +422,8 @@ public static class Parser {
 		from _colon in Token(new Token.Colon())
 		from isRef in Token(new Token.Keyword("ref")).Optional()
 		from typeIdent in IdentifierName
-		select new Param { Name = nameIdent, TypeName = typeIdent, IsRef = isRef.HasValue, Span = nameIdent.Span | typeIdent.Span };
+		select new Param
+			{ Name = nameIdent, TypeName = typeIdent, IsRef = isRef.HasValue, Span = nameIdent.Span | typeIdent.Span };
 
 	private static readonly Parser<Token, Statement> FunctionDecl =
 		from _fn in Token(new Token.Keyword("fn"))
@@ -492,11 +494,11 @@ public static class Parser {
 
 		var err = result.Error!;
 		var span = err.Unexpected.HasValue ? err.Unexpected.Value.Span : new Span(eof, eof);
-		
+
 		var unexpected = err.Unexpected.HasValue ? err.Unexpected.Value.ToString() : "end of input";
 		var expected = string.Join(", ", err.Expected);
 		var message = expected == "" ? $"unexpected {unexpected}" : $"unexpected {unexpected}, expected {expected}";
-		
+
 		throw new CompileException(message, span);
 	}
 }

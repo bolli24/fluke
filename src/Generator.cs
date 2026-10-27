@@ -155,7 +155,7 @@ public class Generator {
 		var builder = new PersistedAssemblyBuilder(asmName, typeof(object).Assembly);
 		var mod = builder.DefineDynamicModule(asmName.Name!);
 		var (_, mainMethod) = GenerateCore(mod, ast);
-		
+
 		ThrowIfErrors();
 
 		var peBytes = BuildPeBytes(builder, mainMethod);
@@ -272,7 +272,8 @@ public class Generator {
 					var fieldTypes = new Dictionary<string, ExpressionType>();
 					foreach (var ((fName, _), fTypeName) in vFields) {
 						var fieldType = ParseType(fTypeName);
-						if (!CheckVariantFieldType(fieldType, eIdent, vIdent, fName, fTypeName.Span, new HashSet<string>()))
+						if (!CheckVariantFieldType(fieldType, eIdent, vIdent, fName, fTypeName.Span,
+							    new HashSet<string>()))
 							fieldType = ExpressionType.Error;
 						fieldTypes[fName] = fieldType;
 						if (fieldType != ExpressionType.Error)
@@ -731,7 +732,8 @@ public class Generator {
 					var argType = argExpr[i];
 					if (!argType.CoercesTo(paramTypes[i]))
 						Error(
-							$"mismatched types for argument {i + 1} of '{name}': expected '{paramTypes[i]}', found '{argType}'", args[i].Span
+							$"mismatched types for argument {i + 1} of '{name}': expected '{paramTypes[i]}', found '{argType}'",
+							args[i].Span
 						);
 				}
 
@@ -806,7 +808,8 @@ public class Generator {
 
 					if (!actualType.CoercesTo(expectedType))
 						Error(
-							$"mismatched types for field '{fieldName}': expected '{expectedType}', found '{actualType}'", fieldExpr.Span
+							$"mismatched types for field '{fieldName}': expected '{expectedType}', found '{actualType}'",
+							fieldExpr.Span
 						);
 					// Fields of type Error were never defined on the CLR type
 					var clrField = payload.clrType.GetField(fieldName);
@@ -847,7 +850,8 @@ public class Generator {
 
 					if (!actualType.CoercesTo(expectedType))
 						Error(
-							$"mismatched types for field '{fieldName}': expected '{expectedType}', found '{actualType}'", fieldExpr.Span
+							$"mismatched types for field '{fieldName}': expected '{expectedType}', found '{actualType}'",
+							fieldExpr.Span
 						);
 					// Fields of type Error were never defined on the CLR type
 					var clrField = structType.clrType.GetField(fieldName);
@@ -907,7 +911,8 @@ public class Generator {
 				var scrutType = BuildExpression(scrutinee);
 				if (!scrutType.CoercesTo(enumType))
 					return Error(
-						$"mismatched types for 'if let' scrutinee: expected '{enumType}', found '{scrutType}'", scrutinee.Span);
+						$"mismatched types for 'if let' scrutinee: expected '{enumType}', found '{scrutType}'",
+						scrutinee.Span);
 
 				var scrutLocal = il.DeclareLocal(enumType.clrType);
 				il.Emit(OpCodes.Stloc, scrutLocal);
@@ -948,7 +953,8 @@ public class Generator {
 				if (elseBlock is not null) {
 					var elseTypeL = BuildExpression(elseBlock);
 					if (!elseTypeL.CoercesTo(thenTypeL) && !thenTypeL.CoercesTo(elseTypeL))
-						return Error($"'if let' and 'else' have incompatible types: '{thenTypeL}' and '{elseTypeL}'", expression.Span);
+						return Error($"'if let' and 'else' have incompatible types: '{thenTypeL}' and '{elseTypeL}'",
+							expression.Span);
 					resultTypeL = thenTypeL == ExpressionType.Never ? elseTypeL : thenTypeL;
 				}
 				else {
@@ -984,7 +990,8 @@ public class Generator {
 				if (elseBlock is not null) {
 					var elseType = BuildExpression(elseBlock);
 					if (!elseType.CoercesTo(thenType) && !thenType.CoercesTo(elseType)) {
-						return Error($"'if' and 'else' have incompatible types: '{thenType}' and '{elseType}'", expression.Span);
+						return Error($"'if' and 'else' have incompatible types: '{thenType}' and '{elseType}'",
+							expression.Span);
 					}
 
 					resultType = thenType == ExpressionType.Never ? elseType : thenType;

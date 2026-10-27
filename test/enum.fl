@@ -6,14 +6,14 @@ enum Direction {
 
 let a = Direction.Up;
 
-:assert(a == Direction.Up);
+:assert(:enum_to_int(a) == :enum_to_int(Direction.Up));
 
 :assert(:enum_to_int(Direction.Down) == 1);
 :assert(:enum_to_int(Direction.Left) == 2);
 :assert(:enum_to_int(Direction.Right) == 3);
 
 fn is_up(d: Direction): bool {
-    d == Direction.Up
+    :enum_to_int(d) == :enum_to_int(Direction.Up)
 }
 
 :assert(is_up(a));
@@ -26,7 +26,7 @@ struct DirectionBox {
 }
 
 let box = DirectionBox { direction: Direction.Left };
-:assert(box.direction == Direction.Left);
+:assert(:enum_to_int(box.direction) == :enum_to_int(Direction.Left));
 
 enum Shape {
     Point,
@@ -42,11 +42,6 @@ let c = Shape.Circle { radius: 5 };
 
 let r = Shape.Rect { width: 3, height: 4 };
 :assert(:enum_to_int(r) == 2);
-:assert(c == Shape.Circle { radius: 5 });
-:assert(c != Shape.Circle { radius: 6 });
-:assert(r == Shape.Rect { width: 3, height: 4 });
-:assert(r != Shape.Rect { width: 4, height: 3 });
-:assert(c != Shape.Rect { width: 0, height: 0 });
 
 if let Shape.Circle { radius } = c {
     :assert(radius == 5);

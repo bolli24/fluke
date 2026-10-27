@@ -1,20 +1,28 @@
-﻿:print("Hello, world");
-:print();
-:print ("Wow");
+﻿:print("Hello, world!");
 
-let a = 69;
-let b = 42;
+struct Point { x: int, y: int }
 
-:print(a + b);
-:assert(a + b == 111);
+let p = Point { x: 1, y: 2 };
+p.x = 40;
+:print(p.x + p.y);
 
-let x = 123;
-
-{ 
-	let y = {
-		x * 2
-	};
-	:print(y);
+enum Shape {
+    Circle { radius: int },
+    Rect { width: int, height: int },
 }
 
-:print(x);
+fn area(s: Shape): int {
+    if let Shape.Circle { radius } = s {
+        // pi is basically 3, right?
+        return 3 * radius * radius; 
+    };
+    if let Shape.Rect { width, height } = s {
+        width * height
+    } else { 0 }
+}
+
+let rect = Shape.Rect { width: 6, height: 7 };
+let circle = Shape.Circle { radius: 2 };
+let total = area(rect) + area(circle);
+:print(total);
+:assert(total == 54);

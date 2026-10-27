@@ -11,6 +11,7 @@ internal sealed class BuildCommand : Command<BuildCommand.Settings> {
 	protected override int Execute(CommandContext context, Settings settings, CancellationToken cancellationToken) {
 		try {
 			var ast = CompilerPipeline.LexAndParse(settings.SourceFile, settings.Verbose);
+			var hir = CompilerPipeline.Check(ast, settings.Verbose);
 
 			var basename = Path.GetFileNameWithoutExtension(settings.SourceFile);
 			var targetDir = Path.Combine(Directory.GetCurrentDirectory(), "target");
@@ -20,8 +21,8 @@ internal sealed class BuildCommand : Command<BuildCommand.Settings> {
 			var runtimeConfigPath = Path.Combine(targetDir, basename + ".runtimeconfig.json");
 
 			var start = DateTime.Now;
-			new Generator().GenerateToFile(ast, dllPath);
-			Console.WriteLine($"Built {dllPath} in {(DateTime.Now - start).Milliseconds} ms");
+			CompilerPipeline.GenerateToFile(hir, dllPath);
+			Console.WriteLine($"Built {dllPath} in {(DateTime.Now - start).TotalMilliseconds:F0} ms");
 
 			File.WriteAllText(runtimeConfigPath, """
 			                                     {
@@ -43,6 +44,7 @@ internal sealed class BuildCommand : Command<BuildCommand.Settings> {
 			foreach (var diagnostic in e.Diagnostics) {
 				diagnostic.Print(Diagnostic.ErrorConsole, source, settings.SourceFile);
 			}
+
 			return 1;
 		}
 	}

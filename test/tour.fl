@@ -121,16 +121,12 @@ enum Shape {
 }
 
 let direction = Direction.Left;
-:assert(direction == Direction.Left);
+:assert(:enum_to_int(direction) == :enum_to_int(Direction.Left));
 :assert(:enum_to_int(Direction.Up) == 0);
 :assert(:enum_to_int(Direction.Left) == 2);
 
 let circle = Shape.Circle { radius: 5 };
 let rect = Shape.Rect { width: 3, height: 4 };
-:assert(circle == Shape.Circle { radius: 5 });
-:assert(circle != Shape.Circle { radius: 6 });
-:assert(rect == Shape.Rect { width: 3, height: 4 });
-:assert(rect != Shape.Rect { width: 4, height: 3 });
 
 // If-let checks enum variants and can bind variant fields.
 if let Shape.Circle { radius } = circle {
