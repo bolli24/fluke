@@ -12,8 +12,9 @@ internal sealed class RunCommand : Command<RunCommand.Settings> {
 		try {
 			var ast = CompilerPipeline.LexAndParse(settings.SourceFile, settings.Verbose);
 			var hir = CompilerPipeline.Check(ast, settings.Verbose);
+			var mir = CompilerPipeline.Lower(hir, settings.Verbose);
 			var start = DateTime.Now;
-			var program = CompilerPipeline.Generate(hir);
+			var program = CompilerPipeline.Generate(mir);
 			Console.WriteLine($"Built executable in {(DateTime.Now - start).TotalMilliseconds:F0} ms\n");
 			program.Run();
 			return 0;

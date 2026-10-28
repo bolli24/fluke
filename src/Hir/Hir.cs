@@ -43,8 +43,8 @@ internal abstract record HirExpression(Ty Type, Span Span) {
 		: HirExpression(new Ty.Enum(variant.Parent), Span);
 
 	// The tail is Unit when the source block has none
-	public record Block(HirStatement[] stmts, HirExpression tail, Ty Type, Span Span) : HirExpression(Type, Span) {
-		public bool IsEmpty => stmts.Length == 0 && tail is Unit;
+	public record Block(HirStatement[] statements, HirExpression tail, Ty Type, Span Span) : HirExpression(Type, Span) {
+		public bool IsEmpty => statements.Length == 0 && tail is Unit;
 	}
 
 	// The else block is an empty block when the source has no else

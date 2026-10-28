@@ -1,0 +1,17 @@
+// Operands are evaluated left to right, even when a later operand assigns to an earlier one
+let a = 1;
+let b = a + { a = 5; a };
+:assert(b == 6);
+
+// An assignment reads all its operands before writing, so a struct can be rebuilt from its own fields
+struct Point { x: int, y: int }
+struct Line { from: Point, to: Point }
+
+let p = Point { x: 1, y: 2 };
+p = Point { x: p.y, y: p.x };
+:assert(p.x == 2 && p.y == 1);
+
+let line = Line { from: Point { x: 1, y: 2 }, to: Point { x: 3, y: 4 } };
+line.from = Point { x: line.from.y, y: line.from.x };
+line = Line { from: line.to, to: line.from };
+:assert(line.from.x == 3 && line.to.x == 2 && line.to.y == 1);

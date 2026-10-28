@@ -12,6 +12,7 @@ internal sealed class BuildCommand : Command<BuildCommand.Settings> {
 		try {
 			var ast = CompilerPipeline.LexAndParse(settings.SourceFile, settings.Verbose);
 			var hir = CompilerPipeline.Check(ast, settings.Verbose);
+			var mir = CompilerPipeline.Lower(hir, settings.Verbose);
 
 			var basename = Path.GetFileNameWithoutExtension(settings.SourceFile);
 			var targetDir = Path.Combine(Directory.GetCurrentDirectory(), "target");
@@ -21,7 +22,7 @@ internal sealed class BuildCommand : Command<BuildCommand.Settings> {
 			var runtimeConfigPath = Path.Combine(targetDir, basename + ".runtimeconfig.json");
 
 			var start = DateTime.Now;
-			CompilerPipeline.GenerateToFile(hir, dllPath);
+			CompilerPipeline.GenerateToFile(mir, dllPath);
 			Console.WriteLine($"Built {dllPath} in {(DateTime.Now - start).TotalMilliseconds:F0} ms");
 
 			File.WriteAllText(runtimeConfigPath, """

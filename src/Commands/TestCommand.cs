@@ -19,7 +19,8 @@ internal sealed class TestCommand : Command<TestCommand.Settings> {
 			try {
 				var ast = CompilerPipeline.LexAndParse(file, settings.Verbose);
 				var hir = CompilerPipeline.Check(ast, settings.Verbose);
-				var program = CompilerPipeline.Generate(hir);
+				var mir = CompilerPipeline.Lower(hir, settings.Verbose);
+				var program = CompilerPipeline.Generate(mir);
 				if (!settings.Output) Console.SetOut(TextWriter.Null);
 				program.Run();
 				Console.SetOut(originalOut);
