@@ -20,15 +20,7 @@ internal static class CompilerPipeline {
 		if (verbose) Console.WriteLine();
 
 		var start = DateTime.Now;
-		List<Token> tokens;
-		SourcePos eof;
-		try {
-			(tokens, eof) = Lexer.Lex(text);
-		}
-		catch (ParseException<char> e) {
-			Console.Error.WriteLine($"Lex error: {e.Message}");
-			throw;
-		}
+		var (tokens, eof) = Lexer.Lex(text);
 
 		if (verbose) {
 			Console.WriteLine($"Lexed input in {(DateTime.Now - start).TotalMilliseconds:F0} ms");

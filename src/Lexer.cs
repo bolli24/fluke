@@ -207,6 +207,23 @@ public static class Lexer {
 		select (tokens.ToList(), eof);
 
 	/// Returns parsed tokens and end of input source position
-	public static (List<Token>, SourcePos) Lex(string input) =>
-		Tokens.ParseOrThrow(input);
+	public static (List<Token>, SourcePos) Lex(string input) {
+		var result = Tokens.Parse(input);
+
+		if (result.Success) return result.Value;
+
+		var err = result.Error!;
+		var span = err.Unexpected.HasValue
+			? new Span(err.ErrorPos, err.ErrorPos.IncrementCol())
+			: new Span(err.ErrorPos, err.ErrorPos);
+
+		var unexpected = err.Unexpected.HasValue ? $"'{err.Unexpected.Value}'" : "end of input";
+		var expected = string.Join(", ", err.Expected.Select(FormatExpected));
+		var message = expected == "" ? $"unexpected {unexpected}" : $"unexpected {unexpected}, expected {expected}";
+
+		throw new CompileException(message, span);
+	}
+
+	private static string FormatExpected(Expected<char> e) =>
+		e.Label ?? (e.IsEof ? "end of input" : $"'{string.Concat(e.Tokens)}'");
 }

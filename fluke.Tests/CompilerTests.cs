@@ -38,8 +38,20 @@ public class CompilerTests {
 
 	[Fact]
 	public void RejectsUnterminatedBlockCommentDuringLexing() {
-		var ex = Assert.Throws<ParseException<char>>(() => Lexer.Lex("let a = 1; /* unterminated"));
-		Assert.Contains("unterminated block comment", ex.Message);
+		var ex = Assert.Throws<CompileException>(() => Lexer.Lex("let a = 1; /* unterminated"));
+		var d = Assert.Single(ex.Diagnostics);
+		Assert.Contains("unterminated block comment", d.Message);
+		// Points at the end of input
+		Assert.Equal(new SourcePos(1, 27), d.Span.Start);
+	}
+
+	[Fact]
+	public void ReportsUnexpectedCharacterDuringLexing() {
+		var ex = Assert.Throws<CompileException>(() => Lexer.Lex("let a = 1 $ 2;"));
+		var d = Assert.Single(ex.Diagnostics);
+		Assert.Contains("unexpected '$'", d.Message);
+		Assert.Equal(new SourcePos(1, 11), d.Span.Start);
+		Assert.Equal(new SourcePos(1, 12), d.Span.End);
 	}
 
 	[Theory]
