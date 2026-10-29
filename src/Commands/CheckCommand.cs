@@ -9,16 +9,16 @@ internal sealed class CheckCommand : Command<CheckCommand.Settings> {
 	}
 
 	protected override int Execute(CommandContext context, Settings settings, CancellationToken cancellationToken) {
+		var source = CompilerPipeline.ReadSource(settings.SourceFile);
 		try {
 			var start = DateTime.Now;
-			var ast = CompilerPipeline.LexAndParse(settings.SourceFile, settings.Verbose);
+			var ast = CompilerPipeline.LexAndParse(source, settings.Verbose);
 			CompilerPipeline.Check(ast, settings.Verbose);
 			Console.WriteLine(
 				$"Checked {settings.SourceFile} in {(DateTime.Now - start).TotalMilliseconds:F0} ms, no errors found");
 			return 0;
 		}
 		catch (CompileException e) {
-			var source = File.ReadAllText(settings.SourceFile);
 			foreach (var diagnostic in e.Diagnostics) {
 				diagnostic.Print(Diagnostic.ErrorConsole, source, settings.SourceFile);
 			}

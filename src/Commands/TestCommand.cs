@@ -16,8 +16,9 @@ internal sealed class TestCommand : Command<TestCommand.Settings> {
 
 		foreach (var file in files) {
 			var originalOut = Console.Out;
+			var source = CompilerPipeline.ReadSource(file);
 			try {
-				var ast = CompilerPipeline.LexAndParse(file, settings.Verbose);
+				var ast = CompilerPipeline.LexAndParse(source, settings.Verbose);
 				var hir = CompilerPipeline.Check(ast, settings.Verbose);
 				var mir = CompilerPipeline.Lower(hir, settings.Verbose);
 				var program = CompilerPipeline.Generate(mir);
@@ -31,7 +32,6 @@ internal sealed class TestCommand : Command<TestCommand.Settings> {
 				Console.SetOut(originalOut);
 				Console.WriteLine($"FAIL {file}");
 
-				var source = File.ReadAllText(file);
 				foreach (var diagnostic in e.Diagnostics) {
 					diagnostic.Print(Diagnostic.CreateConsole(Console.Out), source, file);
 				}

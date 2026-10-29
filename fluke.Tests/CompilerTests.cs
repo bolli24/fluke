@@ -15,7 +15,7 @@ public class CompilerTests {
 	[Theory]
 	[MemberData(nameof(TestFiles))]
 	public void Checks(string path) {
-		var ast = CompilerPipeline.LexAndParse(path);
+		var ast = CompilerPipeline.LexAndParse(CompilerPipeline.ReadSource(path));
 		new Checker().Check(ast);
 	}
 
@@ -23,7 +23,7 @@ public class CompilerTests {
 	[Theory]
 	[MemberData(nameof(TestFiles))]
 	public void Lowers(string path) {
-		var hir = new Checker().Check(CompilerPipeline.LexAndParse(path));
+		var hir = new Checker().Check(CompilerPipeline.LexAndParse(CompilerPipeline.ReadSource(path)));
 		new MirBuilder(hir).Lower();
 	}
 
@@ -31,7 +31,7 @@ public class CompilerTests {
 	[Theory]
 	[MemberData(nameof(TestFiles))]
 	public void Run(string path) {
-		var hir = new Checker().Check(CompilerPipeline.LexAndParse(path));
+		var hir = new Checker().Check(CompilerPipeline.LexAndParse(CompilerPipeline.ReadSource(path)));
 		var mir = new MirBuilder(hir).Lower();
 		new MirEmitter(mir).EmitInMemory().Run();
 	}

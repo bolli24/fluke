@@ -5,17 +5,18 @@ using Pidgin;
 namespace fluke;
 
 internal static class CompilerPipeline {
-	internal static Ast LexAndParse(string path, bool verbose = false) {
-		string text;
+	internal static string ReadSource(string path) {
 		try {
 			using var reader = new StreamReader(path);
-			text = reader.ReadToEnd();
+			return reader.ReadToEnd();
 		}
 		catch (IOException e) {
 			Console.Error.WriteLine($"Could not read file: {e.Message}");
 			throw;
 		}
+	}
 
+	internal static Ast LexAndParse(string text, bool verbose = false) {
 		if (verbose) Console.WriteLine();
 
 		var start = DateTime.Now;
