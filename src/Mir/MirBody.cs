@@ -99,12 +99,14 @@ internal sealed class MirProgram(MirBody main) {
 	// Every function except Main, nested ones included
 	public List<MirBody> Functions { get; } = [];
 
+	public IEnumerable<MirBody> Bodies => Functions.Prepend(Main);
+
 	public MirBody Main { get; } = main;
 
 	// Checks invariants lowering must uphold. Returns one message per violation; empty when valid.
 	public List<string> Verify() {
 		var errors = new List<string>();
-		foreach (var body in Functions.Prepend(Main))
+		foreach (var body in Bodies)
 			new MirVerifier(body, errors).Verify();
 		return errors;
 	}

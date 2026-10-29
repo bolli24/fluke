@@ -12,7 +12,6 @@ public class CompilerTests {
 		return data;
 	}
 
-	// Code generation is pending MIR, so test programs are only checked, not run
 	[Theory]
 	[MemberData(nameof(TestFiles))]
 	public void Checks(string path) {
@@ -26,6 +25,15 @@ public class CompilerTests {
 	public void Lowers(string path) {
 		var hir = new Checker().Check(CompilerPipeline.LexAndParse(path));
 		new MirBuilder(hir).Lower();
+	}
+
+	// Emits, verifies and runs the program; a failing :assert throws
+	[Theory]
+	[MemberData(nameof(TestFiles))]
+	public void Run(string path) {
+		var hir = new Checker().Check(CompilerPipeline.LexAndParse(path));
+		var mir = new MirBuilder(hir).Lower();
+		new MirEmitter(mir).EmitInMemory().Run();
 	}
 
 	[Fact]

@@ -73,18 +73,15 @@ internal static class CompilerPipeline {
 
 		if (verbose) {
 			Console.WriteLine($"Lowered input in {(DateTime.Now - start).TotalMilliseconds:F0} ms");
-			foreach (var body in mir.Functions.Prepend(mir.Main)) Console.WriteLine(body);
+			foreach (var body in mir.Bodies) Console.WriteLine(body);
 			Console.WriteLine();
 		}
 
 		return mir;
 	}
 
-	// Code generation from MIR is not implemented yet (see MIR.MD). The old AST-based Generator is kept
-	// for reference only.
-	internal static FlukeProgram Generate(MirProgram mir) =>
-		throw new NotImplementedException("code generation is not implemented yet (pending the MIR emitter)");
+	internal static FlukeProgram Generate(MirProgram mir) => new MirEmitter(mir).EmitInMemory();
 
 	internal static void GenerateToFile(MirProgram mir, string outputPath) =>
-		throw new NotImplementedException("code generation is not implemented yet (pending the MIR emitter)");
+		new MirEmitter(mir).EmitToFile(outputPath);
 }

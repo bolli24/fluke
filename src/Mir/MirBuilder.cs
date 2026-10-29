@@ -28,9 +28,8 @@ internal sealed class MirBuilder {
 		// The message includes the MIR, since the errors are hard to follow without it.
 		var errors = program.Verify();
 		if (errors.Count > 0) {
-			var bodies = program.Functions.Prepend(program.Main);
 			throw new InvalidOperationException(
-				$"invalid MIR:\n{string.Join("\n", errors)}\n\n{string.Join("\n\n", bodies)}");
+				$"invalid MIR:\n{string.Join("\n", errors)}\n\n{string.Join("\n\n", program.Bodies)}");
 		}
 
 		return program;

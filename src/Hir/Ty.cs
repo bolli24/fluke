@@ -4,17 +4,17 @@ namespace fluke.Hir;
 
 // Semantic types. These know nothing about the CLR; the backend maps definitions to CLR types.
 internal abstract record Ty {
-	private sealed record IntTy : Ty;
+	internal sealed record IntTy : Ty;
 
-	private sealed record BoolTy : Ty;
+	internal sealed record BoolTy : Ty;
 
-	private sealed record StringTy : Ty;
+	internal sealed record StringTy : Ty;
 
-	private sealed record UnitTy : Ty;
+	internal sealed record UnitTy : Ty;
 
-	private sealed record NeverTy : Ty;
+	internal sealed record NeverTy : Ty;
 
-	private sealed record ErrorTy : Ty;
+	internal sealed record ErrorTy : Ty;
 
 	// Equality is reference equality on the definition
 	public sealed record Struct(StructDef def) : Ty;
