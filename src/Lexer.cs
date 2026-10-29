@@ -96,6 +96,35 @@ public abstract record Token {
 			_ => throw new UnreachableException()
 		};
 	}
+
+	// Source spelling, for diagnostics
+	public string Spelling() =>
+		this switch {
+			Dot => "'.'",
+			Colon => "':'",
+			Semicolon => "';'",
+			Comma => "','",
+			LParen => "'('",
+			RParen => "')'",
+			LBrace => "'{'",
+			RBrace => "'}'",
+			Plus => "'+'",
+			Minus => "'-'",
+			Star => "'*'",
+			Slash => "'/'",
+			Bang => "'!'",
+			Equal => "'='",
+			EqualEqual => "'=='",
+			BangEqual => "'!='",
+			PipePipe => "'||'",
+			AmpAmp => "'&&'",
+			Identifier(var name) => $"identifier '{name}'",
+			String(var value) => $"string \"{value}\"",
+			Int(var value) => $"integer {value}",
+			Bool(var value) => value ? "'true'" : "'false'",
+			Keyword(var name) => $"'{name}'",
+			_ => throw new UnreachableException()
+		};
 }
 
 public static class Lexer {
@@ -183,7 +212,8 @@ public static class Lexer {
 		String("//").Then(AnyCharExcept('\r', '\n').SkipMany());
 
 	private static readonly Parser<char, Unit> BlockComment =
-		Try(String("/*")).Then(Any.SkipUntil(String("*/").Labelled("closing '*/' (unterminated block comment)")));
+		Try(String("/*")).Then(Any.SkipUntil(Try(String("*/")))
+			.Labelled("closing '*/' (unterminated block comment)"));
 
 	private static readonly Parser<char, Unit> Ignored =
 		OneOf(Whitespace.ThenReturn(Unit.Value), Try(LineComment), BlockComment).SkipMany();
@@ -217,13 +247,14 @@ public static class Lexer {
 			? new Span(err.ErrorPos, err.ErrorPos.IncrementCol())
 			: new Span(err.ErrorPos, err.ErrorPos);
 
-		var unexpected = err.Unexpected.HasValue ? $"'{err.Unexpected.Value}'" : "end of input";
-		var expected = string.Join(", ", err.Expected.Select(FormatExpected));
-		var message = expected == "" ? $"unexpected {unexpected}" : $"unexpected {unexpected}, expected {expected}";
-
-		throw new CompileException(message, span);
+		throw CompileException.FromParseError(err, span, SpellChars);
 	}
 
-	private static string FormatExpected(Expected<char> e) =>
-		e.Label ?? (e.IsEof ? "end of input" : $"'{string.Concat(e.Tokens)}'");
+	// Whitespace would break the message apart, so it is named instead
+	private static string SpellChars(IEnumerable<char> chars) =>
+		string.Concat(chars) switch {
+			"\n" or "\r" => "newline",
+			"\t" => "tab",
+			var s => $"'{s}'"
+		};
 }

@@ -40,9 +40,24 @@ public class CompilerTests {
 	public void RejectsUnterminatedBlockCommentDuringLexing() {
 		var ex = Assert.Throws<CompileException>(() => Lexer.Lex("let a = 1; /* unterminated"));
 		var d = Assert.Single(ex.Diagnostics);
-		Assert.Contains("unterminated block comment", d.Message);
+		Assert.Equal("unexpected end of input, expected closing '*/' (unterminated block comment)", d.Message);
 		// Points at the end of input
 		Assert.Equal(new SourcePos(1, 27), d.Span.Start);
+	}
+
+	[Theory]
+	[InlineData("/* a * b */ let a = 1;")]
+	[InlineData("/* a **/ let a = 1;")]
+	public void LexesBlockCommentsContainingStars(string source) {
+		var (tokens, _) = Lexer.Lex(source);
+		Assert.Equal(5, tokens.Count);
+	}
+
+	[Fact]
+	public void NamesNewlineInUnterminatedStringError() {
+		var ex = Assert.Throws<CompileException>(() => Lexer.Lex("let a = \"abc;\nlet b = 1;"));
+		Assert.Equal("unexpected newline, expected closing '\"' (unterminated string)",
+			Assert.Single(ex.Diagnostics).Message);
 	}
 
 	[Fact]
@@ -52,6 +67,29 @@ public class CompilerTests {
 		Assert.Contains("unexpected '$'", d.Message);
 		Assert.Equal(new SourcePos(1, 11), d.Span.Start);
 		Assert.Equal(new SourcePos(1, 12), d.Span.End);
+	}
+
+	[Theory]
+	[InlineData("struct S { a int }", "unexpected identifier 'int', expected ':'")]
+	[InlineData("fn f(a: int { }", "unexpected '{', expected ')'")]
+	public void SpellsTokensInParseErrors(string source, string expectedMessage) {
+		var ex = Assert.Throws<CompileException>(() => Parse(source));
+		Assert.Equal(expectedMessage, Assert.Single(ex.Diagnostics).Message);
+	}
+
+	// Errors after a statement has committed are reported where they occur, not at the statement start
+	[Theory]
+	[InlineData("let a = ;", "unexpected ';', expected expression", 9)]
+	[InlineData("fn f() { let a = 1 + ; }", "unexpected ';', expected expression", 22)]
+	[InlineData("let a = 1; a = 2 * ;", "unexpected ';', expected expression", 20)]
+	[InlineData("return 1 + ;", "unexpected ';', expected expression", 12)]
+	[InlineData("let x = 1 let y = 2;", "unexpected 'let', expected ';'", 11)]
+	[InlineData("fn f(): int { 1 + 2 3 }", "unexpected integer 3, expected ';', '}'", 21)]
+	public void ReportsParseErrorsWhereTheyOccur(string source, string expectedMessage, int expectedCol) {
+		var ex = Assert.Throws<CompileException>(() => Parse(source));
+		var d = Assert.Single(ex.Diagnostics);
+		Assert.Equal(expectedMessage, d.Message);
+		Assert.Equal(expectedCol, d.Span.Start.Col);
 	}
 
 	[Theory]

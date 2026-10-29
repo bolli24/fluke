@@ -29,14 +29,7 @@ internal static class CompilerPipeline {
 		}
 
 		start = DateTime.Now;
-		Ast ast;
-		try {
-			ast = Parser.Parse(tokens, eof);
-		}
-		catch (ParseException<Token> e) {
-			Console.Error.WriteLine($"Parse error: {e.Message}");
-			throw;
-		}
+		var ast = Parser.Parse(tokens, eof);
 
 		if (verbose) {
 			Console.WriteLine($"Parsed input in {(DateTime.Now - start).TotalMilliseconds:F0} ms");

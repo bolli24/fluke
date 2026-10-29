@@ -187,9 +187,6 @@ public static class Parser {
 	private static Parser<Token, T> Spanned<T>(Parser<Token, T> p) where T : Expression =>
 		p.MapWithInput((input, node) => (T)((Expression)node with { Span = input[0].Span | input[^1].Span }));
 
-	private static Parser<Token, T> SpannedStatement<T>(Parser<Token, T> p) where T : Statement =>
-		p.MapWithInput((input, node) => (T)((Statement)node with { Span = input[0].Span | input[^1].Span }));
-
 	// Parses zero or more comma-separated items, allowing an optional trailing comma.
 	private static Parser<Token, IEnumerable<T>> CommaSeparated<T>(Parser<Token, T> p) =>
 		from items in Try(from item in p from _ in Token(new Token.Comma()) select item).Many()
@@ -204,11 +201,15 @@ public static class Parser {
 		from token in Token(t => t is Token.Identifier).Labelled("identifier")
 		select new Ident(((Token.Identifier)token).name, token.Span);
 
+	// Exactly one of the two is set; a tail can only be the last item, as it must be followed by '}'
+	private readonly record struct BlockItem(Statement? Statement, Expression? Tail);
+
 	private static readonly Parser<Token, Expression.Block> Block = Spanned(from _l in Token(new Token.LBrace())
-		from stmts in Rec(() => Statement!).Many()
-		from tail in Rec(() => Expression!).Optional()
+		from items in Rec(() => BlockItemParser!).Many()
 		from _r in Token(new Token.RBrace())
-		select new Expression.Block(stmts.ToArray(), tail.GetValueOrDefault()));
+		select new Expression.Block(
+			items.Where(i => i.Statement != null).Select(i => i.Statement!).ToArray(),
+			items.LastOrDefault().Tail));
 
 	private static readonly Parser<Token, IEnumerable<(Ident, Expression)>> InitFields =
 		from _lbrace in Token(new Token.LBrace())
@@ -389,13 +390,9 @@ public static class Parser {
 		).Optional()
 		select (Expression)new Expression.If(condition, thenBlock, elseBlock.GetValueOrDefault()));
 
-	private static readonly Parser<Token, Statement> ExpressionStatement =
-		from expr in Expression
-		select (Statement)new Statement.ExpressionStatement(expr);
-
 	private static readonly Parser<Token, Statement> Return =
 		from _return in Token(new Token.Keyword("return"))
-		from expression in Try(Expression).Optional()
+		from expression in Expression.Optional()
 		select (Statement)new Statement.Return(expression.GetValueOrDefault());
 
 	private static readonly Parser<Token, Statement> VariableBinding =
@@ -405,9 +402,9 @@ public static class Parser {
 		from expression in Expression
 		select (Statement)new Statement.VariableBinding(ident, expression);
 
+	// Only the `lhs =` prefix backtracks, so errors in the right-hand side are reported where they occur
 	private static readonly Parser<Token, Statement> Assignment =
-		from lhs in FieldAccess
-		from _ in Token(new Token.Equal())
+		from lhs in Try(FieldAccess.Before(Token(new Token.Equal())))
 		from rhs in Expression
 		select (Statement)new Statement.Assignment(lhs, rhs);
 
@@ -468,24 +465,41 @@ public static class Parser {
 		from _rbrace in Token(new Token.RBrace())
 		select (Statement)new Statement.EnumDeclaration(name, variants.ToArray());
 
-	private static readonly Parser<Token, Statement> Statement = SpannedStatement(Try(
-			from statement in OneOf(Try(Assignment), VariableBinding, Return, ExpressionStatement)
-			from _ in Token(new Token.Semicolon())
-			select statement
-		)
-		.Or(OneOf(FunctionDecl, StructDecl, EnumDecl))
-		.Or(
-			Try(
-				from expr in Try(Rec(() => IfLet)).Or(Rec(() => If)).Or(from b in Block select (Expression)b)
-				from _ in Not(Token(new Token.RBrace()))
-				select (Statement)new Statement.ExpressionStatement(expr)
-			)
-		));
+	private static bool IsBlockLike(fluke.Expression expr) =>
+		expr is fluke.Expression.If or fluke.Expression.IfLet or fluke.Expression.Block;
+
+	// An expression statement and a block's tail expression share their prefix, so the expression is parsed
+	// once and what follows decides: ';' makes it a statement, '}' makes it the tail. Block-like expressions
+	// may also stand as statements without ';'. A tail is only allowed inside a block.
+	private static Parser<Token, BlockItem> ExpressionItem(bool inBlock) {
+		var semicolon = Token(new Token.Semicolon()).ThenReturn(true);
+		var end = inBlock ? semicolon.Or(Lookahead(Token(new Token.RBrace())).ThenReturn(false)) : semicolon;
+		return SpannedItem(
+			from expr in Expression
+			from isStatement in IsBlockLike(expr) ? end.Or(Parser<Token>.Return(true)) : end
+			select isStatement
+				? new BlockItem(new Statement.ExpressionStatement(expr), null)
+				: new BlockItem(null, expr));
+	}
+
+	private static Parser<Token, BlockItem> Item(bool inBlock) =>
+		SpannedItem(
+			OneOf(VariableBinding, Return, Assignment).Before(Token(new Token.Semicolon()))
+				.Or(OneOf(FunctionDecl, StructDecl, EnumDecl))
+				.Select(s => new BlockItem(s, null))
+		).Or(ExpressionItem(inBlock));
+
+	private static Parser<Token, BlockItem> SpannedItem(Parser<Token, BlockItem> p) =>
+		p.MapWithInput((input, item) => item.Statement is { } s
+			? item with { Statement = s with { Span = input[0].Span | input[^1].Span } }
+			: item);
+
+	private static readonly Parser<Token, BlockItem> BlockItemParser = Item(inBlock: true);
 
 	private static readonly Parser<Token, Ast> Program =
-		from stmts in Statement.Many()
+		from items in Item(inBlock: false).Many()
 		from _end in End
-		select new Ast(stmts.ToList());
+		select new Ast(items.Select(i => i.Statement!).ToList());
 
 	public static Ast Parse(List<Token> tokens, SourcePos eof) {
 		var result = Program.Parse(tokens);
@@ -495,10 +509,7 @@ public static class Parser {
 		var err = result.Error!;
 		var span = err.Unexpected.HasValue ? err.Unexpected.Value.Span : new Span(eof, eof);
 
-		var unexpected = err.Unexpected.HasValue ? err.Unexpected.Value.ToString() : "end of input";
-		var expected = string.Join(", ", err.Expected);
-		var message = expected == "" ? $"unexpected {unexpected}" : $"unexpected {unexpected}, expected {expected}";
-
-		throw new CompileException(message, span);
+		throw CompileException.FromParseError(err, span,
+			tokens => string.Join(" ", tokens.Select(t => t.Spelling())));
 	}
 }
