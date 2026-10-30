@@ -33,7 +33,7 @@ internal sealed class TestCommand : Command<TestCommand.Settings> {
 				Console.WriteLine($"FAIL {file}");
 
 				foreach (var diagnostic in e.Diagnostics) {
-					diagnostic.Print(Diagnostic.CreateConsole(Console.Out), source, file);
+					diagnostic.Print(DiagnosticRenderer.CreateConsole(Console.Out), source, file);
 				}
 
 				failed++;

@@ -20,7 +20,7 @@ internal sealed class CheckCommand : Command<CheckCommand.Settings> {
 		}
 		catch (CompileException e) {
 			foreach (var diagnostic in e.Diagnostics) {
-				diagnostic.Print(Diagnostic.ErrorConsole, source, settings.SourceFile);
+				diagnostic.Print(DiagnosticRenderer.ErrorConsole, source, settings.SourceFile);
 			}
 
 			return 1;
