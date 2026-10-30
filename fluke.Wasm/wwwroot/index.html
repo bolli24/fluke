@@ -1,0 +1,58 @@
+<!doctype html>
+<html lang="en">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Fluke Lint Demo</title>
+	<style>
+		body { font-family: system-ui, sans-serif; margin: 2rem auto; max-width: 900px; padding: 0 16px; }
+		#status { color: #666; }
+		#editor .cm-editor { border: 1px solid #ccc; height: 70vh; }
+		#editor .cm-scroller { font-family: ui-monospace, monospace; }
+	</style>
+</head>
+<body>
+<h1>Fluke lint demo</h1>
+<p id="status">Loading checker…</p>
+<div id="editor"></div>
+
+<script type="module">
+	import { basicSetup, EditorView } from "https://esm.sh/codemirror@6.0.1";
+	// Same URL codemirror imports internally, so both share one copy of the lint module
+	import { linter, lintGutter } from "https://esm.sh/@codemirror/lint@^6.0.0?target=es2022";
+	import { load } from "./linter.js";
+
+	const status = document.getElementById("status");
+	const checker = await load();
+
+	const flukeLinter = linter(view => {
+		const start = performance.now();
+		const diagnostics = checker.check("main.fl", { "main.fl": view.state.doc.toString() });
+		const ms = (performance.now() - start).toFixed(1);
+		status.textContent = diagnostics.length === 0
+			? `No errors (checked in ${ms} ms)`
+			: `${diagnostics.length} error(s) (checked in ${ms} ms)`;
+		return diagnostics;
+	}, { delay: 300 });
+
+	const sample = `struct Point { x: int, y: int }
+
+let p = Point { x: 1, y: 2 };
+p.x = 40;
+:print(p.x + true);
+
+fn double(n: int): int {
+	n * 2
+}
+
+:print(double(p.y));
+`;
+
+	new EditorView({
+		doc: sample,
+		extensions: [basicSetup, lintGutter(), flukeLinter],
+		parent: document.getElementById("editor"),
+	});
+</script>
+</body>
+</html>

@@ -18,6 +18,7 @@
     <ItemGroup>
         <Compile Remove="fluke.Tests/**"/>
         <Compile Remove="fluke.Core/**"/>
+        <Compile Remove="fluke.Wasm/**"/>
     </ItemGroup>
 
     <ItemGroup>

@@ -1,0 +1,19 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.WebAssembly">
+
+    <PropertyGroup>
+        <OutputType>Exe</OutputType>
+        <TargetFramework>net10.0</TargetFramework>
+        <ImplicitUsings>enable</ImplicitUsings>
+        <Nullable>enable</Nullable>
+        <RootNamespace>fluke.Wasm</RootNamespace>
+        <!-- Required by [JSExport] -->
+        <AllowUnsafeBlocks>true</AllowUnsafeBlocks>
+        <!-- Keeps the download small; the checker needs no culture data -->
+        <InvariantGlobalization>true</InvariantGlobalization>
+    </PropertyGroup>
+
+    <ItemGroup>
+        <ProjectReference Include="../fluke.Core/fluke.Core.csproj"/>
+    </ItemGroup>
+
+</Project>

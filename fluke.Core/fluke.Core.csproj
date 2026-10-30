@@ -14,6 +14,7 @@
     <ItemGroup>
         <InternalsVisibleTo Include="fluke"/>
         <InternalsVisibleTo Include="fluke.Tests"/>
+        <InternalsVisibleTo Include="fluke.Wasm"/>
     </ItemGroup>
 
     <ItemGroup>
