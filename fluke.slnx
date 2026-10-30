@@ -1,4 +1,5 @@
 <Solution>
     <Project Path="fluke.csproj"/>
+    <Project Path="fluke.Core/fluke.Core.csproj"/>
     <Project Path="fluke.Tests/fluke.Tests.csproj"/>
 </Solution>
