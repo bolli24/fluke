@@ -16,14 +16,14 @@ internal sealed class CheckCommand : Command<CheckCommand.Settings> {
 			CompilerPipeline.Check(ast, settings.Verbose);
 			Console.WriteLine(
 				$"Checked {settings.SourceFile} in {(DateTime.Now - start).TotalMilliseconds:F0} ms, no errors found");
-			return 0;
+			return ExitCode.Success;
 		}
 		catch (CompileException e) {
 			foreach (var diagnostic in e.Diagnostics) {
 				diagnostic.Print(DiagnosticRenderer.ErrorConsole, source, settings.SourceFile);
 			}
 
-			return 1;
+			return ExitCode.CompileError;
 		}
 	}
 }

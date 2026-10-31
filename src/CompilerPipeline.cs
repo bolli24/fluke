@@ -11,8 +11,8 @@ internal static class CompilerPipeline {
 			return reader.ReadToEnd();
 		}
 		catch (IOException e) {
-			Console.Error.WriteLine($"Could not read file: {e.Message}");
-			throw;
+			// Reported by Program.HandleException
+			throw new IOException($"Could not read file: {e.Message}", e);
 		}
 	}
 

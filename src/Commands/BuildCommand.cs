@@ -39,14 +39,14 @@ internal sealed class BuildCommand : Command<BuildCommand.Settings> {
 			                                     """);
 			Console.WriteLine($"Wrote {runtimeConfigPath}");
 
-			return 0;
+			return ExitCode.Success;
 		}
 		catch (CompileException e) {
 			foreach (var diagnostic in e.Diagnostics) {
 				diagnostic.Print(DiagnosticRenderer.ErrorConsole, source, settings.SourceFile);
 			}
 
-			return 1;
+			return ExitCode.CompileError;
 		}
 	}
 }

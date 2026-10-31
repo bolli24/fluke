@@ -48,7 +48,7 @@ internal sealed class TestCommand : Command<TestCommand.Settings> {
 
 		Console.WriteLine();
 		Console.WriteLine($"{passed} passed, {failed} failed.");
-		return failed > 0 ? 1 : 0;
+		return failed > 0 ? ExitCode.TestsFailed : ExitCode.Success;
 	}
 
 	private static IEnumerable<string> GetFiles(string path, string extension) {
