@@ -27,6 +27,15 @@ public class CompilerTests {
 		new MirBuilder(hir).Lower();
 	}
 
+	// The --emit views list Main first
+	[Theory]
+	[MemberData(nameof(TestFiles))]
+	public void FormatsViews(string path) {
+		var hir = new Checker().Check(CompilerPipeline.LexAndParse(CompilerPipeline.ReadSource(path)));
+		Assert.StartsWith("fn Main(): unit {", CompilerPipeline.FormatHir(hir));
+		Assert.StartsWith("fn Main(): unit {", CompilerPipeline.FormatMir(new MirBuilder(hir).Lower()));
+	}
+
 	// Emits, verifies and runs the program; a failing :assert throws
 	[Theory]
 	[MemberData(nameof(TestFiles))]

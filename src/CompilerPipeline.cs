@@ -47,7 +47,7 @@ internal static class CompilerPipeline {
 
 		if (verbose) {
 			Console.WriteLine($"Checked input in {(DateTime.Now - start).TotalMilliseconds:F0} ms");
-			foreach (var fn in hir.Functions.Prepend(hir.Main)) Console.WriteLine($"{fn.Signature} {fn.Body}");
+			Console.WriteLine(FormatHir(hir));
 			Console.WriteLine();
 		}
 
@@ -60,12 +60,18 @@ internal static class CompilerPipeline {
 
 		if (verbose) {
 			Console.WriteLine($"Lowered input in {(DateTime.Now - start).TotalMilliseconds:F0} ms");
-			foreach (var body in mir.Bodies) Console.WriteLine(body);
+			Console.WriteLine(FormatMir(mir));
 			Console.WriteLine();
 		}
 
 		return mir;
 	}
+
+	// Main first, then the other functions, separated by blank lines
+	internal static string FormatHir(HirProgram hir) =>
+		string.Join("\n\n", hir.Functions.Prepend(hir.Main).Select(fn => $"{fn.Signature} {fn.Body}"));
+
+	internal static string FormatMir(MirProgram mir) => string.Join("\n\n", mir.Bodies);
 
 	internal static FlukeProgram Generate(MirProgram mir) => new MirEmitter(mir).EmitInMemory();
 

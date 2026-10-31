@@ -18,8 +18,31 @@ internal sealed class BuildCommand : Command<BuildCommand.Settings> {
 		[DefaultValue(20)]
 		public int Iterations { get; init; }
 
-		public override ValidationResult Validate() =>
-			Iterations < 1 ? ValidationResult.Error("--iterations must be at least 1") : ValidationResult.Success();
+		[CommandOption("--emit <VIEWS>")]
+		[Description("Write intermediate representations to --emit-dir, comma-separated: hir, mir.")]
+		public string? Emit { get; init; }
+
+		[CommandOption("--emit-dir <DIR>")]
+		[Description("Directory for --emit, one <view>.txt per view.")]
+		[DefaultValue("target")]
+		public string EmitDir { get; init; } = "target";
+
+		internal static readonly string[] KnownViews = ["hir", "mir"];
+
+		// Empty when --emit is missing or empty, so scripts can always pass it
+		public HashSet<string> Views =>
+			Emit?.Split(',', StringSplitOptions.TrimEntries | StringSplitOptions.RemoveEmptyEntries).ToHashSet() ?? [];
+
+		public override ValidationResult Validate() {
+			if (Iterations < 1)
+				return ValidationResult.Error("--iterations must be at least 1");
+			if (Views.FirstOrDefault(v => !KnownViews.Contains(v)) is { } unknown)
+				return ValidationResult.Error(
+					$"unknown view '{unknown}' for --emit, expected {string.Join(", ", KnownViews)}");
+			if (Timings && Views.Count > 0)
+				return ValidationResult.Error("--emit can't be combined with --timings");
+			return ValidationResult.Success();
+		}
 	}
 
 	protected override int Execute(CommandContext context, Settings settings, CancellationToken cancellationToken) {
@@ -38,9 +61,18 @@ internal sealed class BuildCommand : Command<BuildCommand.Settings> {
 				Console.WriteLine($"Built {dllPath}");
 			}
 			else {
+				var views = settings.Views;
+				string ViewPath(string view) => Path.Combine(settings.EmitDir, view + ".txt");
+				if (views.Count > 0) Directory.CreateDirectory(settings.EmitDir);
+				// Views are written as soon as their stage succeeds, so a failed build must not leave
+				// those of an earlier build behind
+				foreach (var view in views) File.Delete(ViewPath(view));
+
 				var ast = CompilerPipeline.LexAndParse(source, settings.Verbose);
 				var hir = CompilerPipeline.Check(ast, settings.Verbose);
+				if (views.Contains("hir")) File.WriteAllText(ViewPath("hir"), CompilerPipeline.FormatHir(hir) + "\n");
 				var mir = CompilerPipeline.Lower(hir, settings.Verbose);
+				if (views.Contains("mir")) File.WriteAllText(ViewPath("mir"), CompilerPipeline.FormatMir(mir) + "\n");
 
 				var start = DateTime.Now;
 				CompilerPipeline.GenerateToFile(mir, dllPath);
