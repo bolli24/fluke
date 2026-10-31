@@ -1,0 +1,11 @@
+// Fluke has no loops (or <), so this is naive Fibonacci of 60: shallow recursion that takes
+// billions of years instead
+fn fib(n: int): int {
+    if n == 0 || n == 1 then {
+        n
+    } else {
+        fib(n - 1) + fib(n - 2)
+    }
+}
+
+:print(fib(60));

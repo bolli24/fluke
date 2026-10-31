@@ -1,0 +1,98 @@
+# Examples shown in the playground, see CONTRACT.md in the playground-runner repo.
+# The Dockerfile copies test/ next to this file, so paths are relative to test/.
+
+[[program]]
+id = "tour"
+title = "Tour"
+files = ["tour.fl"]
+entry = "tour.fl"
+expect.phase = "run"
+expect.stdout = "unit block\nannounced\nthen branch\ntour complete\n\n"
+
+[[program]]
+id = "hello_world"
+title = "Hello world"
+files = ["hello_world.fl"]
+entry = "hello_world.fl"
+expect.phase = "run"
+expect.stdout = "Hello, world!\n42\n54\n"
+
+[[program]]
+id = "variables"
+title = "Variables"
+files = ["variables.fl"]
+entry = "variables.fl"
+expect.phase = "run"
+expect.stdout = ""
+
+[[program]]
+id = "arithmetic"
+title = "Arithmetic"
+files = ["arithmetic.fl"]
+entry = "arithmetic.fl"
+expect.phase = "run"
+expect.stdout = ""
+
+[[program]]
+id = "assignment"
+title = "Assignment"
+files = ["assignment.fl"]
+entry = "assignment.fl"
+expect.phase = "run"
+expect.stdout = ""
+
+[[program]]
+id = "blocks"
+title = "Blocks"
+files = ["blocks.fl"]
+entry = "blocks.fl"
+expect.phase = "run"
+expect.stdout = "side effect\nunit binding\n"
+
+[[program]]
+id = "comments"
+title = "Comments"
+files = ["comments.fl"]
+entry = "comments.fl"
+expect.phase = "run"
+expect.stdout = "comments ok\n"
+
+[[program]]
+id = "if"
+title = "If"
+files = ["if.fl"]
+entry = "if.fl"
+expect.phase = "run"
+expect.stdout = "if statement true\nthen branch\nelse taken\nequal\nelse if taken\nunit if\n"
+
+[[program]]
+id = "functions"
+title = "Functions"
+files = ["functions.fl"]
+entry = "functions.fl"
+expect.phase = "run"
+expect.stdout = "not returned\nno_op called\nnested\nouter\nblock-scoped\nlater\n"
+
+[[program]]
+id = "structs"
+title = "Structs"
+files = ["structs.fl"]
+entry = "structs.fl"
+expect.phase = "run"
+expect.stdout = ""
+
+[[program]]
+id = "enum"
+title = "Enums"
+files = ["enum.fl"]
+entry = "enum.fl"
+expect.phase = "run"
+expect.stdout = "0\n"
+
+[[program]]
+id = "evaluation_order"
+title = "Evaluation order"
+files = ["evaluation_order.fl"]
+entry = "evaluation_order.fl"
+expect.phase = "run"
+expect.stdout = ""

@@ -1,0 +1,78 @@
+# Builds the playground image, checks it against the playground contract, and promotes it to
+# :playground when the check passes. The VPS pulls :playground. See playground/Dockerfile.
+# A failed run leaves :playground on the previous image; GitHub emails about the failure.
+
+name: Playground image
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+# Promote in push order; a newer run waits for the older one instead of racing it.
+concurrency:
+  group: playground-image
+  cancel-in-progress: false
+
+env:
+  IMAGE: ghcr.io/bolli24/fluke
+
+jobs:
+  build:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      image: ${{ steps.tag.outputs.image }}
+    steps:
+      - uses: actions/checkout@v5
+
+      - id: tag
+        run: echo "image=$IMAGE:sha-${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: playground/Dockerfile
+          build-args: REVISION=${{ github.sha }}
+          tags: ${{ steps.tag.outputs.image }}
+          push: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  contract:
+    needs: build
+    permissions:
+      contents: read
+      packages: read
+    uses: bolli24/playground-runner/.github/workflows/contract.yml@main
+    with:
+      image: ${{ needs.build.outputs.image }}
+
+  promote:
+    needs: [build, contract]
+    runs-on: ubuntu-24.04
+    permissions:
+      packages: write
+    steps:
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Retag as :playground, keeping the previous one as :playground-prev
+        run: |
+          if docker buildx imagetools inspect "$IMAGE:playground" > /dev/null 2>&1; then
+            docker buildx imagetools create --tag "$IMAGE:playground-prev" "$IMAGE:playground"
+          fi
+          docker buildx imagetools create --tag "$IMAGE:playground" "${{ needs.build.outputs.image }}"

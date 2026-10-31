@@ -1,0 +1,28 @@
+# Conformance fixtures, see CONTRACT.md in the playground-runner repo.
+
+[[program]]
+id = "hello"
+files = ["hello.fl"]
+entry = "hello.fl"
+expect.phase = "run"
+expect.stdout = "Hello, world!\n"
+
+[[program]]
+id = "compile_error"
+files = ["compile_error.fl"]
+entry = "compile_error.fl"
+expect.phase = "compile"
+
+[[program]]
+id = "exit_code"
+files = ["exit_code.fl"]
+entry = "exit_code.fl"
+expect.phase = "run"
+expect.exit_code = 3
+
+[[program]]
+id = "infinite_loop"
+files = ["infinite_loop.fl"]
+entry = "infinite_loop.fl"
+expect.phase = "run"
+expect.timeout = true
