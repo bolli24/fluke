@@ -137,6 +137,7 @@ internal abstract record Rvalue {
 internal enum MirIntrinsic {
 	Print,
 	Assert,
+	Exit,
 }
 
 internal abstract record MirStatement {

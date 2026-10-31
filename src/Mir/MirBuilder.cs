@@ -132,11 +132,12 @@ internal sealed class MirBuilder {
 				var mirKind = kind switch {
 					IntrinsicKind.Print => MirIntrinsic.Print,
 					IntrinsicKind.Assert => MirIntrinsic.Assert,
+					IntrinsicKind.Exit => MirIntrinsic.Exit,
 					_ => throw new UnreachableException(),
 				};
 				var argOperands = LowerOperands(args);
 
-				// Print and assert return unit, which has no storage, so dest is not written
+				// Print, assert and exit return unit, which has no storage, so dest is not written
 				currentBlock.Statements.Add(new MirStatement.Intrinsic(mirKind, argOperands));
 				break;
 			}

@@ -718,6 +718,13 @@ public class Checker {
 							Error($"'enum_to_int' argument must be an enum, found '{argType}'", args[0].Span);
 						return new HirExpression.Intrinsic(IntrinsicKind.EnumToInt, argExprs, Ty.Int, expr.Span);
 					}
+					case "exit": {
+						if (argExprs.Length != 1)
+							return Error($"'exit' takes 1 argument, found {args.Length}", expr.Span);
+						if (!argExprs[0].Type.CoercesTo(Ty.Int))
+							Error($"'exit' argument must be 'int', found '{argExprs[0].Type}'", args[0].Span);
+						return new HirExpression.Intrinsic(IntrinsicKind.Exit, argExprs, Ty.Unit, expr.Span);
+					}
 					default:
 						return Error($"unknown intrinsic '{name}'", nameSpan);
 				}

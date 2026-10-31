@@ -188,6 +188,25 @@ public class CompilerTests {
 		new Checker().Check(Parse("fn f(): int { let x = { return 1; }; x = 5; 2 }"));
 	}
 
+	// :exit ends the process, so it can't be run here; emitting still verifies the IL
+	[Theory]
+	[InlineData(":exit(3);")]
+	[InlineData("let code = 1 + 2; :print(code); :exit(code); :print(0);")]
+	public void EmitsExit(string source) {
+		var mir = new MirBuilder(new Checker().Check(Parse(source))).Lower();
+		new MirEmitter(mir).EmitInMemory();
+	}
+
+	[Theory]
+	[InlineData(":exit();", "'exit' takes 1 argument, found 0")]
+	[InlineData(":exit(1, 2);", "'exit' takes 1 argument, found 2")]
+	[InlineData(":exit(true);", "'exit' argument must be 'int', found 'bool'")]
+	public void RejectsInvalidExit(string source, string expectedMessage) {
+		var ast = Parse(source);
+		var ex = Assert.Throws<CompileException>(() => new Checker().Check(ast));
+		Assert.Equal(expectedMessage, Assert.Single(ex.Diagnostics).Message);
+	}
+
 	private static Ast Parse(string source) {
 		var (tokens, eof) = Lexer.Lex(source);
 		return Parser.Parse(tokens, eof);

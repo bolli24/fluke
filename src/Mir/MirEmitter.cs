@@ -213,6 +213,11 @@ internal sealed class MirEmitter(MirProgram program) {
 				il.MarkLabel(ok);
 				break;
 			}
+			// Ends the whole process, so programs run in-process (fluke run, the tests) end with it
+			case (MirIntrinsic.Exit, [var code]):
+				EmitOperand(code);
+				il.Emit(OpCodes.Call, typeof(Environment).GetMethod("Exit", [typeof(int)])!);
+				break;
 			default:
 				throw new UnreachableException($"invalid intrinsic `{new MirStatement.Intrinsic(kind, args)}`");
 		}

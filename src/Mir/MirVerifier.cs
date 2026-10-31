@@ -57,6 +57,12 @@ internal sealed class MirVerifier(MirBody body, List<string> errors) {
 							else
 								ExpectType(types[0], Ty.Bool, $"argument of `{statement}`");
 							break;
+						case MirIntrinsic.Exit:
+							if (args.Length != 1)
+								Error($"`{statement}` takes 1 argument, found {args.Length}");
+							else
+								ExpectType(types[0], Ty.Int, $"argument of `{statement}`");
+							break;
 						default:
 							throw new UnreachableException();
 					}

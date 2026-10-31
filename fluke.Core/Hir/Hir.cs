@@ -9,6 +9,7 @@ internal enum IntrinsicKind {
 	Print,
 	Assert,
 	EnumToInt,
+	Exit,
 }
 
 internal abstract record HirExpression(Ty Type, Span Span) {
