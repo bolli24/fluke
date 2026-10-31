@@ -5,9 +5,11 @@
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS build
 WORKDIR /src
 COPY . .
-# The compiler starts once per job, so ReadyToRun saves the JIT warm-up every time
-RUN dotnet publish fluke.csproj -c Release -r linux-x64 --self-contained false \
-        -p:PublishReadyToRun=true -o /out/fluke
+# The compiler starts once per job, so ReadyToRun saves the JIT warm-up every time. Self-contained
+# with a composite image precompiles the framework code fluke uses too, which roughly halves compile
+# times under gVisor, where JIT and type loading are slow.
+RUN dotnet publish fluke.csproj -c Release -r linux-x64 --self-contained true \
+        -p:PublishReadyToRun=true -p:PublishReadyToRunComposite=true -o /out/fluke
 
 # The browser linter: fluke.Wasm, which needs the wasm-tools workload
 FROM mcr.microsoft.com/dotnet/sdk:10.0 AS linter
@@ -28,7 +30,7 @@ ENV DOTNET_CLI_TELEMETRY_OPTOUT=1 \
     DOTNET_EnableDiagnostics=0
 
 COPY --from=build /out/fluke /opt/fluke
-RUN printf '#!/bin/sh\nexec dotnet /opt/fluke/fluke.dll "$@"\n' > /usr/local/bin/fluke \
+RUN printf '#!/bin/sh\nexec /opt/fluke/fluke "$@"\n' > /usr/local/bin/fluke \
     && chmod 755 /usr/local/bin/fluke
 COPY --chmod=755 playground/run.sh /playground/run
 COPY playground/fixtures /playground/fixtures
