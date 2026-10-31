@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using fluke.Hir;
 using fluke.Mir;
 using Pidgin;
@@ -70,4 +71,62 @@ internal static class CompilerPipeline {
 
 	internal static void GenerateToFile(MirProgram mir, string outputPath) =>
 		new MirEmitter(mir).EmitToFile(outputPath);
+
+	private static readonly string[] StageNames = ["Lex", "Parse", "Check", "Lower", "Emit"];
+
+	// Compiles source 1 + warmIterations times in this process, writing the assembly to outputPath
+	// each time, and prints how long each stage took. The first run is reported on its own because it
+	// includes JIT compilation; the warm runs are summarised by median and minimum.
+	internal static void TimeStages(string source, string outputPath, int warmIterations) {
+		var runs = warmIterations + 1;
+		var samples = new double[StageNames.Length + 1][]; // Last row is the total of each run
+		for (var i = 0; i < samples.Length; i++) samples[i] = new double[runs];
+
+		var stopwatch = new Stopwatch();
+		for (var run = 0; run < runs; run++) {
+			// Keep garbage from the previous run from being collected during this one
+			GC.Collect();
+			GC.WaitForPendingFinalizers();
+			GC.Collect();
+
+			stopwatch.Restart();
+			var (tokens, eof) = Lexer.Lex(source);
+			samples[0][run] = Lap(stopwatch);
+			var ast = Parser.Parse(tokens, eof);
+			samples[1][run] = Lap(stopwatch);
+			var hir = new Checker().Check(ast);
+			samples[2][run] = Lap(stopwatch);
+			var mir = new MirBuilder(hir).Lower();
+			samples[3][run] = Lap(stopwatch);
+			new MirEmitter(mir).EmitToFile(outputPath);
+			samples[4][run] = Lap(stopwatch);
+
+			for (var stage = 0; stage < StageNames.Length; stage++) samples[^1][run] += samples[stage][run];
+		}
+
+		Console.WriteLine($"1 cold run, {warmIterations} warm runs");
+		Console.WriteLine($"{"Stage",-8}{"Cold",12}{"Warm median",14}{"Warm min",12}");
+		for (var i = 0; i < samples.Length; i++) {
+			var name = i < StageNames.Length ? StageNames[i] : "Total";
+			var warm = samples[i][1..];
+			Console.WriteLine(
+				$"{name,-8}{Ms(samples[i][0]),12}{Ms(Median(warm)),14}{Ms(warm.Min()),12}");
+		}
+
+		return;
+
+		static double Lap(Stopwatch stopwatch) {
+			var ms = stopwatch.Elapsed.TotalMilliseconds;
+			stopwatch.Restart();
+			return ms;
+		}
+
+		static string Ms(double ms) => $"{ms:F2} ms";
+
+		static double Median(double[] values) {
+			var sorted = values.Order().ToArray();
+			var mid = sorted.Length / 2;
+			return sorted.Length % 2 == 1 ? sorted[mid] : (sorted[mid - 1] + sorted[mid]) / 2;
+		}
+	}
 }
