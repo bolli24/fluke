@@ -19,7 +19,7 @@ internal sealed class BuildCommand : Command<BuildCommand.Settings> {
 		public int Iterations { get; init; }
 
 		[CommandOption("--emit <VIEWS>")]
-		[Description("Write intermediate representations to --emit-dir, comma-separated: hir, mir.")]
+		[Description("Write intermediate representations to --emit-dir, comma-separated: hir, mir, cil.")]
 		public string? Emit { get; init; }
 
 		[CommandOption("--emit-dir <DIR>")]
@@ -27,7 +27,7 @@ internal sealed class BuildCommand : Command<BuildCommand.Settings> {
 		[DefaultValue("target")]
 		public string EmitDir { get; init; } = "target";
 
-		internal static readonly string[] KnownViews = ["hir", "mir"];
+		internal static readonly string[] KnownViews = ["hir", "mir", "cil"];
 
 		// Empty when --emit is missing or empty, so scripts can always pass it
 		public HashSet<string> Views =>
@@ -77,6 +77,7 @@ internal sealed class BuildCommand : Command<BuildCommand.Settings> {
 				var start = DateTime.Now;
 				CompilerPipeline.GenerateToFile(mir, dllPath);
 				Console.WriteLine($"Built {dllPath} in {(DateTime.Now - start).TotalMilliseconds:F0} ms");
+				if (views.Contains("cil")) File.WriteAllText(ViewPath("cil"), CompilerPipeline.FormatCil(dllPath) + "\n");
 			}
 
 			File.WriteAllText(runtimeConfigPath, """

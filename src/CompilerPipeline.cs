@@ -1,6 +1,9 @@
 using System.Diagnostics;
 using fluke.Hir;
 using fluke.Mir;
+using ICSharpCode.Decompiler;
+using ICSharpCode.Decompiler.Disassembler;
+using ICSharpCode.Decompiler.Metadata;
 using Pidgin;
 
 namespace fluke;
@@ -77,6 +80,23 @@ internal static class CompilerPipeline {
 
 	internal static void GenerateToFile(MirProgram mir, string outputPath) =>
 		new MirEmitter(mir).EmitToFile(outputPath);
+
+	// ildasm-style text of the types in the assembly at path. Nested types are printed inside the
+	// type that declares them.
+	internal static string FormatCil(string path) {
+		using var file = new PEFile(path);
+		var reader = file.Metadata;
+		var output = new PlainTextOutput { IndentationString = "\t" };
+		var disassembler = new ReflectionDisassembler(output, CancellationToken.None);
+		foreach (var handle in reader.TypeDefinitions) {
+			var type = reader.GetTypeDefinition(handle);
+			if (!type.GetDeclaringType().IsNil || reader.GetString(type.Name) == "<Module>") continue;
+			disassembler.DisassembleType(file, handle);
+			output.WriteLine();
+		}
+
+		return output.ToString().TrimEnd();
+	}
 
 	private static readonly string[] StageNames = ["Lex", "Parse", "Check", "Lower", "Emit"];
 

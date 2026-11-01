@@ -36,6 +36,22 @@ public class CompilerTests {
 		Assert.StartsWith("fn Main(): unit {", CompilerPipeline.FormatMir(new MirBuilder(hir).Lower()));
 	}
 
+	[Fact]
+	public void FormatsCil() {
+		var hir = new Checker().Check(CompilerPipeline.LexAndParse("fn sq(n: int): int { n * n }\n:print(sq(7));"));
+		var dll = Path.Combine(Path.GetTempPath(), $"fluke-{Guid.NewGuid():N}.dll");
+		try {
+			CompilerPipeline.GenerateToFile(new MirBuilder(hir).Lower(), dll);
+			var cil = CompilerPipeline.FormatCil(dll);
+			Assert.StartsWith(".class public auto ansi Fluke.Program", cil);
+			Assert.Contains("call int32 Fluke.Program::sq(int32)", cil);
+			Assert.Contains("mul", cil);
+		}
+		finally {
+			File.Delete(dll);
+		}
+	}
+
 	// Emits, verifies and runs the program; a failing :assert throws
 	[Theory]
 	[MemberData(nameof(TestFiles))]
